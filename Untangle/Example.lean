@@ -11,7 +11,7 @@ open CategoryTheory Category
 open Untangle
 
 
-lemma filter_join_eq_join_filter'_
+lemma filter_join_eq_join_filter'
   [Category C]
   {T : Monad C}
   {X : C}
@@ -32,20 +32,27 @@ lemma filter_join_eq_join_filter'_
 
   }
 
-lemma filter_join_eq_join_filter'
-  [Category C]
-  {T : Monad C}
-  {X : C}
-  {guard' : X ⟶ T.obj X }
-  :
-    T.μ.app _ ≫ T.map guard' ≫ T.μ.app _ = T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _
-   :=
-  by with_panel_widgets [Untangle]
-    skip
+ example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ :=
+  by with_panel_widgets [Untangle] {
 
-    rw [← reassoc_of% T.μ.naturality _]
-    rw [← T.assoc]
 
+    -- Place cursor below
+
+
+  }
+
+example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ :=
+  by with_panel_widgets [Untangle] {
+
+    -- Place cursor below
+
+
+  }
+
+
+open scoped CategoryTheory.Monad
+
+-- The below examples cause errors
 
 lemma _filter_join_eq_join_filter'
   [Category C]
@@ -75,73 +82,7 @@ example : filter' p ∘ join' = join' ∘ List.map (filter' p) := by
   unfold join'
   have {X Y Z : Type} {f : X ⟶ Y} {g : Y ⟶ Z} : g ∘ f  = f ≫ g := by rfl
   repeat rw [this]
-  apply filter_join_eq_join_filter'_
-
-
-#check CategoryTheory.Monad.toFunctor
--- #check CategoryTheory.Functor.toPreunctor
-
-lemma filter_join_eq_join_filter''
-  [Category C]
-  {T : Monad C}
-  {X : C}
-  {guard' : X ⟶ T.obj X }
-  :
-    T.μ.app _ ≫ T.map guard' ≫ T.μ.app _ = T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _
-   :=
-  by with_panel_widgets [Untangle]
-    repeat rw [T.assoc] -- normalsise
-    {
-      rw [reassoc_of% T.μ.naturality _]
-    }
-
-    -- rw [← reassoc_of% T.μ.naturality _]
-
-lemma filter_join_eq_join_filter'''
-  [Category C]
-  {T : Monad C}
-  {X : C}
-  {guard' : X ⟶ T.obj X }
-  :
-   T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _ = T.μ.app _ ≫ T.map guard' ≫ T.μ.app _
-   :=
-  by with_panel_widgets [Untangle]
-
-    rw [← reassoc_of% T.μ.naturality _]
-    rw [← T.assoc]
-
-lemma filter_join_eq_join_filter''''
-  [Category C]
-  {T : Monad C}
-  {X : C}
-  {guard' : X ⟶ T.obj X }
-  :
-   T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _ = T.μ.app _ ≫ T.map guard' ≫ T.μ.app _
-   :=
-  by with_panel_widgets [Untangle]
-  repeat rw [T.assoc]
-  repeat rw [Functor.comp_obj]
-  {
-
-    have : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ := by
-
-    {
-
-      exact (T.assoc _).symm
-
-    }
-
-
-  }
-
-example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ := by
-  rw [← T.assoc]
-
-
-open scoped CategoryTheory.Monad
-#check Prefunctor.map
-
--- The below examples cause errors
+  apply _filter_join_eq_join_filter'
 
 -- TODO: Doesn't work when the body contains a goal containing a let clause
 lemma filter_join_eq_join_filter
