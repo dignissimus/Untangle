@@ -606,7 +606,6 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
       -- TODO: I have access to the Lean Expr so I don't need to build strings
       --  I can build tactics as Expr/Syntax and
       --   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
-      -- I simp at the end of each line because identical diagrams might differ by associativity
       return {
         textDocument := {
           uri := doc.meta.uri,
