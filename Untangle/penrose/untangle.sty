@@ -1,0 +1,52 @@
+forall FunctorLike f {
+    vec2 f.center = (?, ?)
+
+    shape f.textBox = Rectangle {
+        center: f.center
+        strokeColor: theme.tooltipBorder
+        fillColor: none()
+    }
+}
+
+forall NaturalTransformationLike f {
+    vec2 f.center = (?, ?)
+
+    shape f.textBox = Rectangle {
+        center: f.center
+        strokeColor: theme.tooltipBorder
+    }
+}
+
+forall FunctorLike F; FunctorLike G
+where Apply(F, G) {
+  G.center = (F.center[0] + 100, F.center[1])
+}
+
+forall FunctorLike F; FunctorLike G
+where Next(F, G) {
+  G.center = (F.center[0], F.center[1] - 200)
+}
+
+forall FunctorLike F; FunctorLike G
+where Connect(F, G) {
+  shape p = Path {
+    d: interpolatingSpline("open", [F.center, ((3 * G.center[0] + F.center[0])/4, (F.center[1] + G.center[1])/2),  G.center])
+  }
+}
+
+forall FunctorLike F; NaturalTransformationLike alpha
+where Transform(F, alpha) {
+  alpha.center = (?, F.center[1] - 100)
+  shape p = Path {
+    d: interpolatingSpline("open", [F.center, ((alpha.center[0] + 3 * F.center[0])/4, alpha.center[1] + 50),  alpha.center])
+  }
+  encourage alpha.center[0] - F.center[0] == 0
+}
+
+forall NaturalTransformationLike alpha; FunctorLike F
+where Out(alpha, F) {
+  shape p = Path {
+    d: interpolatingSpline("open", [alpha.center, ((3 * F.center[0] + alpha.center[0])/4, F.center[1] + 50),  F.center])
+  }
+  encourage alpha.center[0] - F.center[0] == 0
+}
