@@ -100,7 +100,7 @@ lemma filter_join_eq_join_filter
     rw [Monad.assoc]
 
 
--- TODO: This example causes an error
+-- TODO: This example causes an error due to functor composition
 example
   [Category C]
   [Category D]
