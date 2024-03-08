@@ -49,11 +49,31 @@ example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T)
 
   }
 
+-- TODO:
+--  In the future I'd like to search through hypotheses and generate
+--  rewrite rules for morphisms in the category
+example
+  [Category C]
+  {X Y Z W : C}
+  (x : X ⟶ Y)
+  {y : Y ⟶ Z}
+  {z z' : Z ⟶W}
+  {w : X ⟶ Z}
+  {h : x ≫ y = w}
+  {h' : y ≫ z = y ≫ z'}
+  : x ≫ y ≫ z = w ≫ z'
+  := by with_panel_widgets [Untangle] {
+    rw [h']
+    rw [reassoc_of% h]
+  }
+
 
 open scoped CategoryTheory.Monad
 
 -- The below examples cause errors
 
+-- This errors because I haven't implemented lifting the composition of morphisms
+-- For example T.map (f ≫ g) errors but T.map f ≫ T.map g will work
 lemma _filter_join_eq_join_filter'
   [Category C]
   {T : CategoryTheory.Monad C}
@@ -62,7 +82,7 @@ lemma _filter_join_eq_join_filter'
   :
     T.μ.app _ ≫ T.map guard' ≫ T.μ.app _ = T.map (T.map guard' ≫ T.μ.app _) ≫ T.μ.app _
    :=
-  by
+  by with_panel_widgets[Untangle]
     rw [← reassoc_of% T.μ.naturality _]
     rw [← T.comp_map]
     simp
@@ -84,7 +104,7 @@ example : filter' p ∘ join' = join' ∘ List.map (filter' p) := by
   repeat rw [this]
   apply _filter_join_eq_join_filter'
 
--- TODO: Doesn't work when the body contains a goal containing a let clause
+-- TODO: This errors because I haven't implemented parsing goals that contain let clauses
 lemma filter_join_eq_join_filter
   [Category C]
   {T : Monad C}
@@ -100,7 +120,10 @@ lemma filter_join_eq_join_filter
     rw [Monad.assoc]
 
 
--- TODO: This example causes an error due to functor composition
+-- TODO:
+-- This errors because I haven't yet implemented working with goals
+--  that contain contain explicit functor composition
+-- For example (F ⋙ G).map f will error
 example
   [Category C]
   [Category D]
@@ -125,7 +148,7 @@ example
     simp
 
 
--- This example also causes an error
+-- This example also causes an error due to functor composition as above: i.e. F ⋙ T
 example
   [Category C]
   [Category D]
@@ -144,20 +167,6 @@ example
   : T ⋙ T ⋙ T  = (T ⋙ T) ⋙ T := by with_panel_widgets [Untangle]
     skip
     sorry
-
-example
-  [Category C]
-  {X Y Z W : C}
-  (x : X ⟶ Y)
-  {y : Y ⟶ Z}
-  {z z' : Z ⟶W}
-  {w : X ⟶ Z}
-  {h : x ≫ y = w}
-  {h' : y ≫ z = y ≫ z'}
-  : x ≫ y ≫ z = w ≫ z'
-  := by
-    rw [h']
-    rw [reassoc_of% h]
 
 
 example
