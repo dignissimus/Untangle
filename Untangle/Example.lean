@@ -22,8 +22,7 @@ lemma filter_join_eq_join_filter'
   by with_panel_widgets [Untangle] {
 
 
-    -- 1. Click guard' and Monad.μ T to swap the order
-    --  using the naturality of μ
+    -- 1. Click guard' and Monad.μ T to swap the order using the naturality of μ
     -- 2. Click back so that the cursor is in the editor to update the diagram
     -- 3. click the two Monad.μ boxes to apply the associativity law
 
@@ -36,16 +35,32 @@ lemma filter_join_eq_join_filter'
   by with_panel_widgets [Untangle] {
 
 
+    -- Click the two μ natural transformations to apply the associativity law
     -- Place cursor below
 
 
   }
 
-example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ :=
-  by with_panel_widgets [Untangle] {
+-- TODO: Add rewrite rule for pulling η ≫ μ out of thin air
+--  i.e. The rule below in reverse
+--  What should the user input be?
+example [Category C] {T : Monad C} : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app _
+  := by with_panel_widgets [Untangle] {
 
+
+    -- 1. Click η and μ to apply the unit law for the Monad natural transformations
+    -- 2. Do the same on the other side of the diagram
     -- Place cursor below
 
+
+  }
+
+
+
+
+example [Category C] {T : Monad C}
+  : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X  =  (CategoryStruct.id $ T.obj X) :=
+  by with_panel_widgets [Untangle] {
 
   }
 

@@ -150,7 +150,13 @@ mutual
 
   partial def parseExpression (e : Expr) : Option (Expression α) := return Expression.PlainExpression e
 
-  -- TODO:
+
+  partial def parseIdentityMorphism(e : Expr) : Option (Expression ExpressionType.Morphism) := do
+    match getAppFnArgs? e with
+      | some (`CategoryTheory.CategoryStruct.id, #[_, _, X]) => Expression.Morphism e (← parseObject X) (← parseObject X)
+      | _ => fail
+
+  -- TODO: Parse the source and destination from the type of the morphism
   partial def parseMorphismName (e : Expr) : Option (Expression ExpressionType.Morphism) :=  return Expression.Morphism e unknown unknown
   partial def parseObjectName (e : Expr) : Option (Expression ExpressionType.Object) :=  return Expression.Object e
 
@@ -204,6 +210,7 @@ mutual
     parseMorphismLift
     or parseMorphismComposition
     or parseNaturalTransformationComponent
+    or parseIdentityMorphism
     or parseMorphismName
 
   -- partial def parseDiagram : Expr → Option (Expression _) :=
@@ -220,6 +227,11 @@ inductive FunctorLike where
 deriving Repr, BEq
 
 namespace FunctorLike
+  def isIdentity : FunctorLike → Bool
+    | Functor functor => match getAppFnArgs? functor with
+      | some (`CategoryTheory.Functor.id, #[C, _]) => true
+      | _ => false
+    | _ => False
   /- def name : FunctorLike → String
     | Functor name => name
     | Object name => name -/
@@ -234,6 +246,11 @@ namespace TransformationLike
   def expression : TransformationLike → Expr
     | NaturalTransformation expression => expression
     | Morphism expression => expression
+
+def isIdentity (α : TransformationLike) : Bool :=
+  match getAppFnArgs? α.expression with
+    | some (`CategoryTheory.CategoryStruct.id, #[_, _, _]) => true
+    | _ => false
 end TransformationLike
 
 structure Transformation where
@@ -249,6 +266,7 @@ deriving Repr
 namespace Transformation
   def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
   def inputs (α : Transformation) := range α.left α.right
+  def isIdentity (α : Transformation) := α.label.isIdentity
 
   def numberOfInputs (α : Transformation) := α.right - α.left + 1
   def outputStart (α : Transformation) := α.left
@@ -360,7 +378,7 @@ partial def morphismAsDiagramComponent : Expression ExpressionType.Morphism → 
       transformation := {
         label := TransformationLike.Morphism expr, -- TODO: Read from expr, take MetaM as parameter
         left := 0,
-        right := 0,
+        right := source.countObjectLifts,
         numberOfOutputs := outputs.length
       }
       outputs := outputs
@@ -503,13 +521,20 @@ def drawDiagram (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) :
       embeds := embeds.push (alpha, read $ transformationLabel Lean.Meta.ppExpr component.transformation .Left row 0)
       row := row + 1
       diagramString := diagramString ++ s!"NaturalTransformationLike {alpha}\n"
-      for index in range component.transformation.left component.transformation.right do
-        let F := previousIdentifiers[index]!
-        diagramString := diagramString ++ s!"Transform({F}, {alpha})\n"
+      if component.transformation.isIdentity then
+        for (F, G) in List.zip previousIdentifiers currentIdentifiers do
+          diagramString := diagramString ++ s!"Connect({F}, {G})\n"
+          diagramString := diagramString ++ s!"WouldTransform({F}, {alpha})\n"
+      else
+        for index in range component.transformation.left component.transformation.right do
+          let F := previousIdentifiers[index]!
+          -- Don't draw identity morphisms or identity functors
+          if !(component.inputs[index]'sorry).isIdentity then
+            diagramString := diagramString ++ s!"Transform({F}, {alpha})\n"
 
-      for index in component.transformation.outputs do
-        let G := currentIdentifiers[index]!
-        diagramString := diagramString ++ s!"Out({alpha}, {G}) \n"
+        for index in component.transformation.outputs do
+          let G := currentIdentifiers[index]!
+          diagramString := diagramString ++ s!"Out({alpha}, {G}) \n"
 
       aboveFunctor := nextAboveFunctor
 
@@ -543,6 +568,11 @@ structure ClickEvent where
 def isMonadMu? (expression : Expr) :=
   match getAppFnArgs? expression with
     | some (`CategoryTheory.Monad.μ, #[_, _, _]) => true
+    | _ => false
+
+def isMonadEta? (expression : Expr) :=
+  match getAppFnArgs? expression with
+    | some (`CategoryTheory.Monad.η, #[_, _, _]) => true
     | _ => false
 
 def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) :=
@@ -597,8 +627,11 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
     let firstIsMonadMu := isMonadMu? exp₁
     let secondIsMonadMu := isMonadMu? exp₂
 
+    let firstIsMonadEta := isMonadEta? exp₁
+    let secondIsMonadEta := isMonadEta? exp₂
+
     event.goal.ctx.val.runMetaM {} do
-      -- TODO: Be more precise with rewriting
+      -- TODO: Be more precise with rewriting - This is really important
       -- I can try each rewrite and select the one that
       --  produces an identical diagram to the expected one
       --  by hashing diagrams or just comparing them component-wise
@@ -613,8 +646,11 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
         },
         edits := #[{
           range := Lsp.Range.mk position' position'
+          -- TODO: I'll probably want to package these into functions and write a combinator
           newText :=
-            if firstIsMonadMu && secondIsMonadMu then s!"\nrw [Monad.assoc]\n"
+            -- TODO: The below should be more precise both in terms of location and which rewrite rule we try
+            if firstIsMonadEta && secondIsMonadMu then s!"first | rw [T.left_unit] | rw [T.right_unit]\n"
+            else if firstIsMonadMu && secondIsMonadMu then s!"\nrw [Monad.assoc]\n"
             else if firstIsMonadMu then s!"\nrw [← reassoc_of% ({prettyFirst}).naturality ({prettySecond})];\n"
             else if secondIsMonadMu then s!"\nrw [reassoc_of% ({prettySecond}).naturality ({prettyFirst})];\n"
             else panic! s!"{prettyFirst}, {prettySecond}" -- TODO: Not actually unreachable, just no rules for this

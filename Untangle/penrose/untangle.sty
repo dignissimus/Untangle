@@ -43,10 +43,17 @@ where Transform(F, alpha) {
   encourage alpha.center[0] - F.center[0] == 0
 }
 
+forall FunctorLike F; NaturalTransformationLike alpha
+where WouldTransform(F, alpha) {
+  alpha.center = (?, F.center[1] - 100)
+  encourage alpha.center[0] - F.center[0] == 0
+}
+
 forall NaturalTransformationLike alpha; FunctorLike F
 where Out(alpha, F) {
   shape p = Path {
     d: interpolatingSpline("open", [alpha.center, ((3 * F.center[0] + alpha.center[0])/4, F.center[1] + 50),  F.center])
   }
   encourage alpha.center[0] - F.center[0] == 0
+  encourage alpha.center[1] == F.center[1] + 100
 }
