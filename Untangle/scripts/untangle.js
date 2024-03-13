@@ -16,8 +16,8 @@ const debugError = (e) => debug("Erorr: " + JSON.stringify(e));
 
 const writeTacticIntoEditor = (ec) => (response) => {
     debug("completed: " + JSON.stringify(response))
-    ec.api.applyEdit({ documentChanges: [response] });
-    // ec.revealLocation({ uri: response.edits[0].textDocument.uri, range: response.edits[0].range })
+    ec.api.applyEdit({ documentChanges: [response.edit] });
+    ec.revealLocation({ uri: response.edit.textDocument.uri, range: response.nextLocation })
 };
 
 let i = 0;
@@ -51,7 +51,7 @@ function fn(params) {
             second: currentTarget,
             position: params.position,
             goal: params.goal,
-            side
+            side,
         }).then(writeTacticIntoEditor(ec)).catch(debugError);
         lastTarget = null;
         debug("Sent click to server");

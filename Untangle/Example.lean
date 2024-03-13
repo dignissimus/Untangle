@@ -26,7 +26,7 @@ lemma filter_join_eq_join_filter'
     -- 2. Click back so that the cursor is in the editor to update the diagram
     -- 3. click the two Monad.μ boxes to apply the associativity law
 
-    -- Put cursor below here
+    -- Put cursor on this line
 
 
   }
@@ -36,7 +36,7 @@ lemma filter_join_eq_join_filter'
 
 
     -- Click the two μ natural transformations to apply the associativity law
-    -- Place cursor below
+    -- Place cursor on this line
 
 
   }
@@ -50,7 +50,7 @@ example [Category C] {T : Monad C} : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.
 
     -- 1. Click η and μ to apply the unit law for the Monad natural transformations
     -- 2. Do the same on the other side of the diagram
-    -- Place cursor below
+    -- Place cursor on this line
 
 
   }
@@ -189,5 +189,4 @@ example
   { G : D ⥤ C }
   { adjunction : F ⊣ G }
   : sorry
-  := by
     sorry

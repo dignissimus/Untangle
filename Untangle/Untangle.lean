@@ -8,6 +8,7 @@ import ProofWidgets.Component.HtmlDisplay
 import ProofWidgets.Component.OfRpcMethod
 import Mathlib.Init.Data.List.Instances
 import Mathlib.Init.Control.Combinators
+import Mathlib.Data.String.Defs
 
 open Lean Meta Server Expr
 open ProofWidgets
@@ -456,6 +457,9 @@ def joinDiv(ls : List Html) : Html :=
 def joinDivHorizontal (ls : List Html) : Html :=
   Html.element "div" #[("style", Json.mkObj [("display", Json.str "flex"), ("justifyContent", Json.str "space-around")])] ls.toArray
 
+
+def textStyle := Json.mkObj [("color", Json.str "#00003e"), ("text-decoration", "none")]
+
 open scoped Jsx in
 def diagramLabel (f : Expr → MetaM γ) [ToString γ] (side : Side) : Diagram.FunctorLike → MetaM Html
   | Diagram.FunctorLike.Functor functor => return <p></p> -- <p side={toString side}>{(← f  functor) |> toString |> .text}</p>
@@ -463,9 +467,15 @@ def diagramLabel (f : Expr → MetaM γ) [ToString γ] (side : Side) : Diagram.F
 
 open scoped Jsx in
 def transformationLabel (f : Expr → MetaM γ) [ToString γ] (transformation : Diagram.Transformation) (side : Side) (row : ℕ) (column : ℕ) : MetaM Html :=
-    return <p><a side={toString side} row={row} column={column} href="#">{(← f transformation.label.expression) |>  toString |> .text}</a></p>
+    return <p><b><a style={textStyle} side={toString side} row={row} column={column} href="#">{(← f transformation.label.expression) |>  toString |> .text}</a></b></p>
 
 def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
+
+namespace String
+  def rep (s : String) : ℕ → String
+    | 0 => ""
+    | n + 1 => s ++ s.rep n
+end String
 
 open scoped Jsx in
 def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) : IO Html := do
@@ -591,9 +601,14 @@ def isMonadEta? (expression : Expr) :=
     | _ => false
 
 def buildTactic (tactic : String) (side : Side) (location : ℕ) :=
-  s!"conv => \{ enter [{side.toNat}]; slice {location} {location + 1}; {tactic}; }; try simp;\n"
+  s!"conv => \{ enter [{side.toNat}]; slice {location} {location + 1}; {tactic}; }; try simp;"
 
-def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) :=
+structure EditDocument where
+  edit : Lsp.TextDocumentEdit
+  nextLocation : Lsp.Range
+deriving RpcEncodable
+
+def clickRpc (event : ClickEvent) : RequestM (RequestTask EditDocument) :=
   RequestM.asTask do
     let (lhs, rhs) := ← match (← do
           event.goal.ctx.val.runMetaM {} do
@@ -630,10 +645,17 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
     let second := components[secondRow]'sorry -- Bottom expression
 
     let doc ← RequestM.readDoc
-    let nextLine (position : Lsp.Position) := {
-      position with line := position.line - 1
-    }
-    let position' := nextLine event.position
+
+    let fm := doc.meta.text
+    let spos := Lean.FileMap.lspPosToUtf8Pos fm event.position
+    let lineStart := Lean.findLineStart fm.source spos
+    let (indent, isStart) := Lean.findIndentAndIsStart fm.source spos
+
+    -- Don't bother using a new line if the current line is empty
+    let offset := if isStart then 0 else 1
+
+    let position' := ⟨event.position.line + offset, 0⟩
+    let position'' := ⟨event.position.line + offset + 1, indent⟩
     let transformations := (first.transformation.label, second.transformation.label)
 
     let (prettyFirst, prettySecond) ← event.goal.ctx.val.runMetaM {} do
@@ -656,7 +678,7 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
     let secondIsMonadEta := isMonadEta? exp₂
 
     let tacticString :=
-      -- TODO: The below should be more precise both in terms of location and which rewrite rule we try
+      -- TODO: I'll probably want to package these into functions and write a combinator
       if firstIsMonadEta && secondIsMonadMu then s!"first | rw [T.left_unit] | rw [T.right_unit]"
       else if firstIsMonadMu && secondIsMonadMu then s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
       else if firstIsMonadMu then s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
@@ -673,21 +695,23 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
       --  I can build tactics as Expr/Syntax and
       --   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
       return {
+        edit := {
         textDocument := {
           uri := doc.meta.uri,
           version? := doc.meta.version
         },
         edits := #[{
           range := Lsp.Range.mk position' position'
-          -- TODO: I'll probably want to package these into functions and write a combinator
-          newText := buildTactic tacticString side location
+          newText := (" ".rep indent) ++ buildTactic tacticString side location ++ "\n" ++ (" ".rep indent)
           }],
+        }
+        nextLocation := ⟨position'', position''⟩
       }
 
 
 open Server RequestM in
 @[server_rpc_method]
-def handleClick (params : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) := clickRpc params
+def handleClick (params : ClickEvent) : RequestM (RequestTask EditDocument) := clickRpc params
 
 
 @[widget_module]
