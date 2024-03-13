@@ -278,6 +278,7 @@ structure DiagramComponent where
   inputs : List FunctorLike
   transformation: Transformation
   outputs : List FunctorLike
+  location : ℕ
 deriving Repr
 
 instance : ToString (DiagramComponent) := ToString.mk reprStr
@@ -365,7 +366,7 @@ def expressionAsDiagramInput : Expression α →  List FunctorLike
   | Expression.FunctorComposition left right => expressionAsDiagramInput left ++ expressionAsDiagramInput right
   | e => panic! s!"As input: {e}"
 
-partial def morphismAsDiagramComponent : Expression ExpressionType.Morphism → Option DiagramComponent
+partial def morphismAsDiagramComponent (location : ℕ) : Expression ExpressionType.Morphism → Option DiagramComponent
   -- I make the assumption that morphisms map from the source category
   -- But this only holds when the expression is normalised
   -- i.e. let f := T.map f'; f ≫ g'
@@ -381,10 +382,11 @@ partial def morphismAsDiagramComponent : Expression ExpressionType.Morphism → 
         right := source.countObjectLifts,
         numberOfOutputs := outputs.length
       }
+      location
       outputs := outputs
     }
   -- TODO: Below case
-  | Expression.LiftMap functor morphism => do (← morphismAsDiagramComponent morphism).applyFunctor functor
+  | Expression.LiftMap functor morphism => do (← morphismAsDiagramComponent location morphism).applyFunctor functor
   -- TODO: Below case
   -- Might require context? If μ : (T ⋙ T)
   | Expression.NaturalTransformationComponent transformation object source target =>
@@ -397,17 +399,41 @@ partial def morphismAsDiagramComponent : Expression ExpressionType.Morphism → 
           right := object.countObjectLifts + source.countFunctorApplications
           numberOfOutputs := target.countFunctorApplications
         }
+        location
         outputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput target)
       }
   -- TODO: Maybe normalise so this doesn't occur. i.e repeat rw [Functor.comp_assoc]
   -- | Expression.MorphismComposition expr f g => return (← morphismAsDiagramComponent $ Expression.Morphism expr (← f.source) (← g.target))
   | e => panic! s!"Unreachable: {e}"
 
-def constructMorphismDiagram : Expression ExpressionType.Morphism → Option Diagram
-  | Expression.MorphismComposition  _ first second => do (← constructMorphismDiagram first) ++ (← constructMorphismDiagram second)
-  | morphism => do [← morphismAsDiagramComponent morphism]
+def constructMorphismDiagram (location : ℕ): Expression ExpressionType.Morphism → Option Diagram
+  | Expression.MorphismComposition  _ first second => do
+    let left ← constructMorphismDiagram location first
+    let last ← left.getLast?
+    let offset := last.location + 1
+    let right ← constructMorphismDiagram offset second
+    return left ++ right
+  | morphism => do [← morphismAsDiagramComponent location morphism]
 
 end Diagram
+
+inductive Side where
+  | Left
+  | Right
+deriving Repr, RpcEncodable
+
+namespace Side
+def toNat : Side → ℕ
+  | Left => 1
+  | Right => 2
+end Side
+
+instance : ToString Side where
+  toString : Side → String
+    | .Left => "Left"
+    | .Right => "Right"
+
+instance : ToJson Side := ToJson.mk (Json.str ∘ toString)
 
 open scoped Jsx in
 def readInfo (hyps : Array LocalDecl) : MetaM (Option Html) := do
@@ -430,17 +456,6 @@ def joinDiv(ls : List Html) : Html :=
 def joinDivHorizontal (ls : List Html) : Html :=
   Html.element "div" #[("style", Json.mkObj [("display", Json.str "flex"), ("justifyContent", Json.str "space-around")])] ls.toArray
 
-inductive Side where
-  | Left
-  | Right
-
-instance : ToString Side where
-  toString : Side → String
-    | .Left => "left"
-    | .Right => "right"
-
-instance : ToJson Side := ToJson.mk (Json.str ∘ toString)
-
 open scoped Jsx in
 def diagramLabel (f : Expr → MetaM γ) [ToString γ] (side : Side) : Diagram.FunctorLike → MetaM Html
   | Diagram.FunctorLike.Functor functor => return <p></p> -- <p side={toString side}>{(← f  functor) |> toString |> .text}</p>
@@ -453,7 +468,7 @@ def transformationLabel (f : Expr → MetaM γ) [ToString γ] (transformation : 
 def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
 
 open scoped Jsx in
-def drawDiagram (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) : IO Html := do
+def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) : IO Html := do
     let mut diagramString := ""
     let mut counter := 0
     let firstComponent := List.head components (sorry)
@@ -475,7 +490,7 @@ def drawDiagram (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) :
       counter := counter + 1
       diagramString := diagramString ++ s!"FunctorLike {identifier}\n"
       -- embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr input)
-      embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr .Left input)
+      embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr side input)
 
       if let some previousIdentifier := previous then
         diagramString := diagramString ++ s!"Apply({previousIdentifier}, {identifier})\n"
@@ -496,7 +511,7 @@ def drawDiagram (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) :
         currentIdentifiers := currentIdentifiers.append [identifier]
         diagramString := diagramString ++ s!"FunctorLike {identifier}\n"
         -- embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr output)
-        embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr .Left output)
+        embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr side output)
         if let some previousIdentifier := previous then
           diagramString := diagramString ++ s!"Apply({previousIdentifier}, {identifier})\n"
         previous := some identifier
@@ -518,12 +533,11 @@ def drawDiagram (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) :
       counter := counter + 1
 
       -- TODO: Don't assume this diagram is in the left hand side, add a side parameter to this function
-      embeds := embeds.push (alpha, read $ transformationLabel Lean.Meta.ppExpr component.transformation .Left row 0)
+      embeds := embeds.push (alpha, read $ transformationLabel Lean.Meta.ppExpr component.transformation side row 0)
       row := row + 1
       diagramString := diagramString ++ s!"NaturalTransformationLike {alpha}\n"
       if component.transformation.isIdentity then
         for (F, G) in List.zip previousIdentifiers currentIdentifiers do
-          diagramString := diagramString ++ s!"Connect({F}, {G})\n"
           diagramString := diagramString ++ s!"WouldTransform({F}, {alpha})\n"
       else
         for index in range component.transformation.left component.transformation.right do
@@ -562,6 +576,7 @@ structure ClickEvent where
   second : ℕ × ℕ
   position : Lsp.Position
   goal : Widget.InteractiveGoal
+  side : Side
   deriving RpcEncodable
 
 
@@ -575,23 +590,33 @@ def isMonadEta? (expression : Expr) :=
     | some (`CategoryTheory.Monad.η, #[_, _, _]) => true
     | _ => false
 
+def buildTactic (tactic : String) (side : Side) (location : ℕ) :=
+  s!"conv => \{ enter [{side.toNat}]; slice {location} {location + 1}; {tactic}; }; try simp;\n"
+
 def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) :=
   RequestM.asTask do
-    let (lhs, _) := ← match (← do
+    let (lhs, rhs) := ← match (← do
           event.goal.ctx.val.runMetaM {} do
             let declaration ←  event.goal.mvarId.getDecl
             return isCategoricalEquality? declaration.type
         ) with
           | some x => return x
           | _ => throw $ .invalidParams s!"Goal is not equality"
-    let diagram ← event.goal.ctx.val.runMetaM {} do
+    let (diagramL, diagramR) ← event.goal.ctx.val.runMetaM {} do
       let md ← event.goal.mvarId.getDecl
       let lctx := md.lctx |>.sanitizeNames.run' {options := (← getOptions)}
       Meta.withLCtx lctx md.localInstances do
-        return (parseMorphism lhs).getD (Expression.DebugString "Fail")
+        return (
+          (parseMorphism lhs).getD (Expression.DebugString "Fail")
+          , (parseMorphism rhs).getD (Expression.DebugString "Fail")
+        )
 
 
-    let components := Diagram.constructMorphismDiagram diagram |> Option.getD $ []
+    let diagram := match event.side with
+      | .Left => diagramL
+      | .Right => diagramR
+
+    let components := Diagram.constructMorphismDiagram 1 diagram |> Option.getD $ []
 
     let (firstPair, secondPair) :=
       if event.first.1 < event.second.1
@@ -630,11 +655,19 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
     let firstIsMonadEta := isMonadEta? exp₁
     let secondIsMonadEta := isMonadEta? exp₂
 
+    let tacticString :=
+      -- TODO: The below should be more precise both in terms of location and which rewrite rule we try
+      if firstIsMonadEta && secondIsMonadMu then s!"first | rw [T.left_unit] | rw [T.right_unit]"
+      else if firstIsMonadMu && secondIsMonadMu then s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
+      else if firstIsMonadMu then s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
+      else if secondIsMonadMu then s!"rw [({prettySecond}).naturality ({prettyFirst})]"
+      else panic! s!"{prettyFirst}, {prettySecond}" -- TODO: Not actually unreachable, just no rules for this
+
+    let side := event.side
+    -- TODO: second.location = first.location + 1
+    let location := first.location
+
     event.goal.ctx.val.runMetaM {} do
-      -- TODO: Be more precise with rewriting - This is really important
-      -- I can try each rewrite and select the one that
-      --  produces an identical diagram to the expected one
-      --  by hashing diagrams or just comparing them component-wise
       -- TODO: Add more rewrite rules
       -- TODO: I have access to the Lean Expr so I don't need to build strings
       --  I can build tactics as Expr/Syntax and
@@ -647,13 +680,7 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask Lsp.TextDocumentEdit) 
         edits := #[{
           range := Lsp.Range.mk position' position'
           -- TODO: I'll probably want to package these into functions and write a combinator
-          newText :=
-            -- TODO: The below should be more precise both in terms of location and which rewrite rule we try
-            if firstIsMonadEta && secondIsMonadMu then s!"first | rw [T.left_unit] | rw [T.right_unit]\n"
-            else if firstIsMonadMu && secondIsMonadMu then s!"\nrw [Monad.assoc]\n"
-            else if firstIsMonadMu then s!"\nrw [← reassoc_of% ({prettyFirst}).naturality ({prettySecond})];\n"
-            else if secondIsMonadMu then s!"\nrw [reassoc_of% ({prettySecond}).naturality ({prettyFirst})];\n"
-            else panic! s!"{prettyFirst}, {prettySecond}" -- TODO: Not actually unreachable, just no rules for this
+          newText := buildTactic tacticString side location
           }],
       }
 
@@ -691,8 +718,8 @@ def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
       Meta.withLCtx lctx md.localInstances do
         return ((parseMorphism lhs).getD (Expression.DebugString "Fail"), (parseMorphism rhs).getD (Expression.DebugString "Fail"))
 
-    let leftComponents := Diagram.constructMorphismDiagram diagLeft
-    let rightComponents := Diagram.constructMorphismDiagram diagRight
+    let leftComponents := Diagram.constructMorphismDiagram 1 diagLeft
+    let rightComponents := Diagram.constructMorphismDiagram 1 diagRight
 
     let componentsL := Option.getD leftComponents []
     let componentsR := Option.getD rightComponents []
@@ -701,7 +728,7 @@ def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
     return <details «open»={true}>
         <summary className="mv2 pointer">Untangle</summary>
         <div className="ml1">
-          {joinDivHorizontal [← drawDiagram componentsL goal, ← drawDiagram componentsR goal]}
+          {joinDivHorizontal [← drawDiagram Side.Left componentsL goal, ← drawDiagram Side.Right componentsR goal]}
           </div>
         <textarea id="serialised-goal" style={hidden}></textarea>
         <UntangleWidget goal={goal} pair={⟨1, 2⟩} position={props.pos}></UntangleWidget>

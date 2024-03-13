@@ -56,10 +56,8 @@ example [Category C] {T : Monad C} : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.
   }
 
 
-
-
 example [Category C] {T : Monad C}
-  : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X  =  (CategoryStruct.id $ T.obj X) :=
+  : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X = (CategoryStruct.id $ T.obj X) :=
   by with_panel_widgets [Untangle] {
 
   }
