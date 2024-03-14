@@ -333,6 +333,11 @@ def applyFunctor (d : DiagramComponent) (functor : Expression ExpressionType.Fun
     outputs := d.outputs ++ [FunctorLike.Functor fexp]
 }
 
+def isNaturalTransformation : DiagramComponent → Bool
+  | {transformation ..} => match transformation.label with
+    | .NaturalTransformation _ => True
+    | _ => False
+
 end DiagramComponent
 
 
@@ -581,6 +586,7 @@ structure UntangleState where
   pair : ℕ × ℕ
   deriving Server.RpcEncodable
 
+-- This will become more complicated when I add more actions to the user interface
 structure ClickEvent where
   first : ℕ × ℕ
   second : ℕ × ℕ
@@ -607,6 +613,60 @@ structure EditDocument where
   edit : Lsp.TextDocumentEdit
   nextLocation : Lsp.Range
 deriving RpcEncodable
+
+namespace GraphicalTactic
+
+-- TODO: I'll probably want to package these into functions and write a combinator
+
+-- TODO: These rules have simple graphical rules which tell us whether or not we can apply them
+--  I shouldn't generate tactics that will fail in lean
+
+-- TODO: Be precise and split this into left unit and right unit rewrites
+def monad_unit (exp₁ : Expr) (exp₂ : Expr) : Option String :=
+  do
+    panic! ""
+
+def monad_assoc (exp₁ : Expr) (exp₂ : Expr) : Option String :=
+  do
+    panic! ""
+
+
+def naturality (exp₁ : Expr) (exp₂ : Expr) : Option String :=
+  do
+    panic! ""
+
+-- TODO: Add more rewrite rules
+-- TODO: I have access to the Lean Expr so I don't need to build strings
+--  I can build tactics as Expr/Syntax and
+--   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
+
+def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM String :=
+  do
+    let (prettyFirst, prettySecond) ← goal.ctx.val.runMetaM {} do
+      let md ← goal.mvarId.getDecl
+      let lctx := md.lctx |>.sanitizeNames.run' {options := (← getOptions)}
+      Meta.withLCtx lctx md.localInstances do
+        return (
+          ← toString <$> Lean.Meta.ppExpr first.transformation.label.expression,
+          ← toString <$> Lean.Meta.ppExpr second.transformation.label.expression)
+
+    let (exp₁, exp₂) := match first.transformation.label, second.transformation.label with
+      | .Morphism exp₁, .Morphism exp₂=> (exp₁, exp₂)
+      | _, _ => unreachable! -- Probably unreachable
+
+    let firstIsMonadMu := isMonadMu? exp₁
+    let secondIsMonadMu := isMonadMu? exp₂
+
+    let firstIsMonadEta := isMonadEta? exp₁
+    let secondIsMonadEta := isMonadEta? exp₂
+    if firstIsMonadEta && secondIsMonadMu then return s!"first | rw [T.left_unit] | rw [T.right_unit]"
+    else if firstIsMonadMu && secondIsMonadMu then return s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
+    else if first.isNaturalTransformation then return s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
+    else if second.isNaturalTransformation then return s!"rw [({prettySecond}).naturality ({prettyFirst})]"
+    else panic! s!"{prettyFirst}, {prettySecond}" -- TODO: Not actually unreachable, just no rules for this
+end GraphicalTactic
+
+
 
 def clickRpc (event : ClickEvent) : RequestM (RequestTask EditDocument) :=
   RequestM.asTask do
@@ -656,44 +716,15 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask EditDocument) :=
 
     let position' := ⟨event.position.line + offset, 0⟩
     let position'' := ⟨event.position.line + offset + 1, indent⟩
-    let transformations := (first.transformation.label, second.transformation.label)
 
-    let (prettyFirst, prettySecond) ← event.goal.ctx.val.runMetaM {} do
-      let md ← event.goal.mvarId.getDecl
-      let lctx := md.lctx |>.sanitizeNames.run' {options := (← getOptions)}
-      Meta.withLCtx lctx md.localInstances do
-        return (
-          ← toString <$> Lean.Meta.ppExpr first.transformation.label.expression,
-          ← toString <$> Lean.Meta.ppExpr second.transformation.label.expression)
-
-    let (exp₁, exp₂) := match first.transformation.label, second.transformation.label with
-      | .Morphism exp₁, .Morphism exp₂=> (exp₁, exp₂)
-      | _, _ => unreachable! -- Probably unreachable
-
-
-    let firstIsMonadMu := isMonadMu? exp₁
-    let secondIsMonadMu := isMonadMu? exp₂
-
-    let firstIsMonadEta := isMonadEta? exp₁
-    let secondIsMonadEta := isMonadEta? exp₂
-
-    let tacticString :=
-      -- TODO: I'll probably want to package these into functions and write a combinator
-      if firstIsMonadEta && secondIsMonadMu then s!"first | rw [T.left_unit] | rw [T.right_unit]"
-      else if firstIsMonadMu && secondIsMonadMu then s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
-      else if firstIsMonadMu then s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
-      else if secondIsMonadMu then s!"rw [({prettySecond}).naturality ({prettyFirst})]"
-      else panic! s!"{prettyFirst}, {prettySecond}" -- TODO: Not actually unreachable, just no rules for this
-
+    -- TODO: I don't want to panic if we can't apply a tactic
+    let tacticString ← GraphicalTactic.generateTactic event.goal first second
     let side := event.side
+
     -- TODO: second.location = first.location + 1
     let location := first.location
 
     event.goal.ctx.val.runMetaM {} do
-      -- TODO: Add more rewrite rules
-      -- TODO: I have access to the Lean Expr so I don't need to build strings
-      --  I can build tactics as Expr/Syntax and
-      --   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
       return {
         edit := {
         textDocument := {
