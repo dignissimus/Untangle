@@ -3,6 +3,9 @@ Untangle is a Lean4 widget that displays string diagrams for morphisms inside ca
 
 This widget currently has rewrite rules for Monads. Next, I'd like to add rules for symmetric monoidal categories and bimonoids/Hopf algebras.
 
+## Video demonstration
+https://youtu.be/mLCrU9-1jko
+
 # Image
 ![image](https://github.com/dignissimus/Untangle/assets/18627392/54a6d3e9-969f-4b65-9f08-426431d5b68d)
 
