@@ -10,6 +10,37 @@ open CategoryTheory Category
 
 open Untangle
 
+ example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ :=
+  by with_panel_widgets [Untangle] {
+
+
+    -- Click the two μ natural transformations to apply the associativity law
+    -- Place cursor on this line
+
+
+  }
+
+
+example [Category C] {T : Monad C}
+  : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X = (CategoryStruct.id $ T.obj X) :=
+  by with_panel_widgets [Untangle] {
+
+    -- Place cursor on this line
+
+}
+
+
+example [Category C] {T : Monad C} : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app _
+  := by with_panel_widgets [Untangle] {
+
+
+    -- 1. Click η and μ to apply the unit law for the Monad natural transformations
+    -- 2. Do the same on the other side of the diagram
+    -- Place cursor on this line
+
+
+  }
+
 
 lemma filter_join_eq_join_filter'
   [Category C]
@@ -31,36 +62,15 @@ lemma filter_join_eq_join_filter'
 
   }
 
- example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ :=
-  by with_panel_widgets [Untangle] {
 
 
-    -- Click the two μ natural transformations to apply the associativity law
-    -- Place cursor on this line
 
 
-  }
-
--- TODO: Add rewrite rule for pulling η ≫ μ out of thin air
---  i.e. The rule below in reverse
---  What should the user input be?
-example [Category C] {T : Monad C} : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app _
-  := by with_panel_widgets [Untangle] {
 
 
-    -- 1. Click η and μ to apply the unit law for the Monad natural transformations
-    -- 2. Do the same on the other side of the diagram
-    -- Place cursor on this line
 
 
-  }
 
-
-example [Category C] {T : Monad C}
-  : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X = (CategoryStruct.id $ T.obj X) :=
-  by with_panel_widgets [Untangle] {
-
-  }
 
 -- TODO:
 --  In the future I'd like to search through hypotheses and generate

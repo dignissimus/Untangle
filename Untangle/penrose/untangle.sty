@@ -39,7 +39,8 @@ forall FunctorLike F; FunctorLike G
 where Connect(F, G) {
   shape p = Path {
     d: interpolatingSpline("open", [F.center, ((3 * G.center[0] + F.center[0])/4, (F.center[1] + G.center[1])/2),  G.center])
-    strokeWidth: 3
+    strokeWidth: 2
+    strokeColor: #bab3c0 
   }
 }
 
@@ -48,7 +49,8 @@ where Transform(F, alpha) {
   alpha.center = (?, F.center[1] - 100)
   shape p = Path {
     d: interpolatingSpline("open", [F.center, ((alpha.center[0] + 3 * F.center[0])/4, alpha.center[1] + 50),  alpha.center])
-    strokeWidth: 3
+    strokeWidth: 2
+    strokeColor: #bab3c0 
   }
   encourage alpha.center[0] - F.center[0] == 0
 }
@@ -63,7 +65,8 @@ forall NaturalTransformationLike alpha; FunctorLike F
 where Out(alpha, F) {
   shape p = Path {
     d: interpolatingSpline("open", [alpha.center, ((3 * F.center[0] + alpha.center[0])/4, F.center[1] + 50),  F.center])
-    strokeWidth: 3
+    strokeWidth: 2
+    strokeColor: #bab3c0 
   }
   encourage alpha.center[0] - F.center[0] == 0
   encourage alpha.center[1] == F.center[1] + 100
