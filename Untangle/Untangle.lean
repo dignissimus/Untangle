@@ -400,7 +400,7 @@ partial def morphismAsDiagramComponent (location : ℕ) : Expression ExpressionT
       return {
         inputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput source)
         transformation := {
-          label := TransformationLike.Morphism (raw transformation) -- Read from expr
+          label := TransformationLike.NaturalTransformation (raw transformation) -- Read from expr
           left := 1 + object.countObjectLifts
           right := object.countObjectLifts + source.countFunctorApplications
           numberOfOutputs := target.countFunctorApplications
@@ -650,9 +650,8 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
           ← toString <$> Lean.Meta.ppExpr first.transformation.label.expression,
           ← toString <$> Lean.Meta.ppExpr second.transformation.label.expression)
 
-    let (exp₁, exp₂) := match first.transformation.label, second.transformation.label with
-      | .Morphism exp₁, .Morphism exp₂=> (exp₁, exp₂)
-      | _, _ => unreachable! -- Probably unreachable
+    let exp₁ := first.transformation.label.expression
+    let exp₂ := second.transformation.label.expression
 
     let firstIsMonadMu := isMonadMu? exp₁
     let secondIsMonadMu := isMonadMu? exp₂

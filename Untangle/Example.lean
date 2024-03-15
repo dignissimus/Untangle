@@ -10,36 +10,41 @@ open CategoryTheory Category
 
 open Untangle
 
- example [Category C] {T : Monad C} : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ :=
-  by with_panel_widgets [Untangle] {
+variable [Category C] (T : Monad C)
 
+-- Apply the associativity law for the μ naturl transformation
+example : (Monad.μ T).app (T.obj X) ≫ (Monad.μ T).app X = T.map ( (Monad.μ _).app _ ) ≫ (Monad.μ _).app _ := by with_panel_widgets [Untangle] {
 
-    -- Click the two μ natural transformations to apply the associativity law
-    -- Place cursor on this line
+  -- Click the two μ natural transformations to apply the associativity law
+  -- Place cursor on this line
 
-
-  }
-
-
-example [Category C] {T : Monad C}
-  : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X = (CategoryStruct.id $ T.obj X) :=
-  by with_panel_widgets [Untangle] {
-
-    -- Place cursor on this line
 
 }
 
+-- Apply the Monad unit law
+example : (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app X = (CategoryStruct.id $ T.obj X) := by with_panel_widgets [Untangle] {
 
-example [Category C] {T : Monad C} : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app _
-  := by with_panel_widgets [Untangle] {
+  -- Click the η transformation and the μ transformation
+  -- Place cursor on this line
 
+}
+
+-- Apply the Monad unit law on the left and on the right
+example : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.η T).app (T.obj X) ≫ (Monad.μ T).app _ := by with_panel_widgets [Untangle] {
 
     -- 1. Click η and μ to apply the unit law for the Monad natural transformations
     -- 2. Do the same on the other side of the diagram
-    -- Place cursor on this line
+    -- Place cursor on this line try simp;
+
 
 
   }
+
+-- The same thing as above but for T (T X)
+example : T.η.app (T.obj $ T.obj X) ≫ T.μ.app _ = (CategoryStruct.id $ T.obj $ T.obj X) := by with_panel_widgets [Untangle] {
+  -- Place cursor on this line
+
+}
 
 
 lemma filter_join_eq_join_filter'
@@ -47,12 +52,8 @@ lemma filter_join_eq_join_filter'
   {T : Monad C}
   {X : C}
   {guard' : X ⟶ T.obj X }
-  :
-    T.μ.app _ ≫ T.map guard' ≫ T.μ.app _ = T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _
-   :=
-  by with_panel_widgets [Untangle] {
-
-
+  : T.μ.app _ ≫ T.map guard' ≫ T.μ.app _ = T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _
+  := by with_panel_widgets [Untangle] {
     -- 1. Click guard' and Monad.μ T to swap the order using the naturality of μ
     -- 2. Click back so that the cursor is in the editor to update the diagram
     -- 3. click the two Monad.μ boxes to apply the associativity law
@@ -61,16 +62,6 @@ lemma filter_join_eq_join_filter'
 
 
   }
-
-
-
-
-
-
-
-
-
-
 
 -- TODO:
 --  In the future I'd like to search through hypotheses and generate
@@ -198,5 +189,5 @@ example
   { F : C ⥤ D }
   { G : D ⥤ C }
   { adjunction : F ⊣ G }
-  : sorry
+  : sorry := by
     sorry
