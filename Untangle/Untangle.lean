@@ -307,6 +307,8 @@ def raw : Expression α → Expr
   -- | DebugString (s: String) : Expression _
 namespace DiagramComponent
 
+def expression (d : DiagramComponent) : Expr := d.transformation.label.expression
+
 def swap (d : DiagramComponent) : DiagramComponent := {d with inputs := d.outputs, outputs := d.inputs}
 
 def shiftLeft (d : DiagramComponent) (shift : Nat) : DiagramComponent := {
@@ -616,31 +618,55 @@ deriving RpcEncodable
 
 namespace GraphicalTactic
 
--- TODO: I'll probably want to package these into functions and write a combinator
+def orElse' (f g : X → Y → (RequestM $ Option α)) (x : X) (y : Y) : RequestM $ Option α :=
+  do
+    if let Option.some _ := (← f x y) then f x y
+    else g x y
+
+infixl:65 " or' " => orElse'
+macro_rules
+  | `(fail) => `(do ← none)
+
 
 -- TODO: These rules have simple graphical rules which tell us whether or not we can apply them
 --  I shouldn't generate tactics that will fail in lean
 
 -- TODO: Be precise and split this into left unit and right unit rewrites
-def monad_unit (exp₁ : Expr) (exp₂ : Expr) : Option String :=
-  do
-    panic! ""
 
-def monad_assoc (exp₁ : Expr) (exp₂ : Expr) : Option String :=
-  do
-    panic! ""
+-- TODO: I'll probably want to package these into functions and write a combinator
+def monad_unit (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
+  do return do
+    if isMonadEta? first.expression && isMonadMu? second.expression then
+      return (← fail)
+    fail
 
+def monad_assoc (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String  :=
+  do return do
+    if isMonadMu? first.expression && isMonadMu? second.expression then
+      return (← fail)
+    fail
 
-def naturality (exp₁ : Expr) (exp₂ : Expr) : Option String :=
+def naturality  (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent)  : RequestM $ Option String:=
   do
-    panic! ""
+    let prettyFirst : String ← sorry
+    let prettySecond : String ← sorry
+    return do
+      if first.isNaturalTransformation then
+        return (← fail)
+      if second.isNaturalTransformation then
+        return (← fail)
+      fail
+
+def GraphicalTactic :=
+  monad_unit
+  or' monad_assoc
+  or' naturality
 
 -- TODO: Add more rewrite rules
 -- TODO: I have access to the Lean Expr so I don't need to build strings
 --  I can build tactics as Expr/Syntax and
 --   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
-
-def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM String :=
+def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
   do
     let (prettyFirst, prettySecond) ← goal.ctx.val.runMetaM {} do
       let md ← goal.mvarId.getDecl
@@ -658,16 +684,21 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
 
     let firstIsMonadEta := isMonadEta? exp₁
     let secondIsMonadEta := isMonadEta? exp₂
-    if firstIsMonadEta && secondIsMonadMu then return s!"first | rw [T.left_unit] | rw [T.right_unit]"
-    else if firstIsMonadMu && secondIsMonadMu then return s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
-    else if first.isNaturalTransformation then return s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
-    else if second.isNaturalTransformation then return s!"rw [({prettySecond}).naturality ({prettyFirst})]"
-    else panic! s!"{prettyFirst}, {prettySecond}" -- TODO: Not actually unreachable, just no rules for this
+
+    if firstIsMonadEta && secondIsMonadMu then
+      return s!"first | rw [T.left_unit] | rw [T.right_unit]"
+    else if firstIsMonadMu && secondIsMonadMu then
+      return s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
+    else if first.isNaturalTransformation then
+      return s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
+    else if second.isNaturalTransformation then
+      return s!"rw [({prettySecond}).naturality ({prettyFirst})]"
+    return .none
 end GraphicalTactic
 
 
 
-def clickRpc (event : ClickEvent) : RequestM (RequestTask EditDocument) :=
+def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument) :=
   RequestM.asTask do
     let (lhs, rhs) := ← match (← do
           event.goal.ctx.val.runMetaM {} do
@@ -717,14 +748,16 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask EditDocument) :=
     let position'' := ⟨event.position.line + offset + 1, indent⟩
 
     -- TODO: I don't want to panic if we can't apply a tactic
-    let tacticString ← GraphicalTactic.generateTactic event.goal first second
+    let tacticString' ← GraphicalTactic.generateTactic event.goal first second
+    if let .none := tacticString' then return fail
+    let tacticString := tacticString'.get!
     let side := event.side
 
     -- TODO: second.location = first.location + 1
     let location := first.location
 
     event.goal.ctx.val.runMetaM {} do
-      return {
+      return .some {
         edit := {
         textDocument := {
           uri := doc.meta.uri,
@@ -741,7 +774,7 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask EditDocument) :=
 
 open Server RequestM in
 @[server_rpc_method]
-def handleClick (params : ClickEvent) : RequestM (RequestTask EditDocument) := clickRpc params
+def handleClick (params : ClickEvent) : RequestM (RequestTask $ Option EditDocument) := clickRpc params
 
 
 @[widget_module]
