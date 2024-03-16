@@ -280,6 +280,7 @@ structure DiagramComponent where
   transformation: Transformation
   outputs : List FunctorLike
   location : ℕ
+  functorApplications : ℕ := 0
 deriving Repr
 
 instance : ToString (DiagramComponent) := ToString.mk reprStr
@@ -333,6 +334,7 @@ def applyFunctor (d : DiagramComponent) (functor : Expression ExpressionType.Fun
     d with
     inputs := d.inputs ++ [FunctorLike.Functor fexp]
     outputs := d.outputs ++ [FunctorLike.Functor fexp]
+    functorApplications := d.functorApplications + 1
 }
 
 def isNaturalTransformation : DiagramComponent → Bool
@@ -686,7 +688,10 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
     let secondIsMonadEta := isMonadEta? exp₂
 
     if firstIsMonadEta && secondIsMonadMu then
-      return s!"first | rw [T.left_unit] | rw [T.right_unit]"
+      if first.functorApplications ≥ 1 then
+        return s!"rw [T.right_unit]"
+      else
+        return s!"rw [T.left_unit]"
     else if firstIsMonadMu && secondIsMonadMu then
       return s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
     else if first.isNaturalTransformation then
