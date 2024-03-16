@@ -693,7 +693,10 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
       else
         return s!"rw [T.left_unit]"
     else if firstIsMonadMu && secondIsMonadMu then
-      return s!"first | rw [Monad.assoc] | rw [← Monad.assoc]"
+      if first.functorApplications = 1 then
+        return s!"rw [Monad.assoc]"
+      else
+        return s!"rw [← Monad.assoc]"
     else if first.isNaturalTransformation then
       return s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
     else if second.isNaturalTransformation then
