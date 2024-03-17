@@ -611,7 +611,7 @@ def isMonadEta? (expression : Expr) :=
     | _ => false
 
 def buildTactic (tactic : String) (side : Side) (location : ℕ) :=
-  s!"conv => \{ enter [{side.toNat}]; slice {location} {location + 1}; {tactic}; }; try simp;"
+  s!"conv => \{ enter [{side.toNat}]; slice {location} {location + 1}; {tactic}; }; try simp only [CategoryTheory.Category.assoc];"
 
 structure EditDocument where
   edit : Lsp.TextDocumentEdit
@@ -698,9 +698,9 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
       else
         return s!"rw [← Monad.assoc]"
     else if first.isNaturalTransformation then
-      return s!"rw [← ({prettyFirst}).naturality ({prettySecond})]"
+      return s!"rw [← ({prettyFirst}).naturality ({prettySecond}), CategoryTheory.Functor.comp_map]"
     else if second.isNaturalTransformation then
-      return s!"rw [({prettySecond}).naturality ({prettyFirst})]"
+      return s!"rw [← CategoryTheory.Functor.comp_map, ({prettySecond}).naturality ({prettyFirst})]"
     return .none
 end GraphicalTactic
 
