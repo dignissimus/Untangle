@@ -610,8 +610,25 @@ def isMonadEta? (expression : Expr) :=
     | some (`CategoryTheory.Monad.η, #[_, _, _]) => true
     | _ => false
 
-def buildTactic (tactic : String) (side : Side) (location : ℕ) :=
-  s!"conv => \{ enter [{side.toNat}]; slice {location} {location + 1}; {tactic}; }; try simp only [CategoryTheory.Category.assoc];"
+def withIndent (indent : ℕ) (s : String) := s.split (. = '\n') |> List.map (" ".rep indent ++ .) |> String.join
+
+
+
+def Conv (ts : List String) :=
+  let commands := ts.map ("\r\n" ++ " ".rep 2 ++ .) |> String.join;
+  "conv => {" ++ commands ++ "\r\n}"
+
+def Enter (n : ℕ) := s!"enter [{n}]"
+def Slice (l r : ℕ) := s!"slice {l} {r}"
+def trySimp := (. ++ "\r\ntry simp only [CategoryTheory.Category.assoc]")
+
+
+def buildTactic (tactic : String) (side : Side) (location : ℕ) (indent : ℕ) :=
+  Conv [
+    Enter side.toNat,
+    Slice location (location + 1),
+    tactic,
+  ] |> trySimp |> withIndent indent
 
 structure EditDocument where
   edit : Lsp.TextDocumentEdit
@@ -704,7 +721,9 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
     return .none
 end GraphicalTactic
 
-
+namespace String
+def lines (s : String) := s.split (. = '\r')
+end String
 
 def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument) :=
   RequestM.asTask do
@@ -749,20 +768,20 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
     let lineStart := Lean.findLineStart fm.source spos
     let (indent, isStart) := Lean.findIndentAndIsStart fm.source spos
 
-    -- Don't bother using a new line if the current line is empty
-    let offset := if isStart then 0 else 1
-
-    let position' := ⟨event.position.line + offset, 0⟩
-    let position'' := ⟨event.position.line + offset + 1, indent⟩
-
     -- TODO: I don't want to panic if we can't apply a tactic
     let tacticString' ← GraphicalTactic.generateTactic event.goal first second
     if let .none := tacticString' then return fail
     let tacticString := tacticString'.get!
+
+    -- Don't bother using a new line if the current line is empty
+    let offset := if isStart then 0 else 1
     let side := event.side
 
     -- TODO: second.location = first.location + 1
     let location := first.location
+    let command := buildTactic tacticString side location indent
+    let position' := ⟨event.position.line + offset, 0⟩
+    let position'' := ⟨event.position.line + offset + command.lines.length, indent⟩
 
     event.goal.ctx.val.runMetaM {} do
       return .some {
@@ -773,7 +792,7 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
         },
         edits := #[{
           range := Lsp.Range.mk position' position'
-          newText := (" ".rep indent) ++ buildTactic tacticString side location ++ "\n" ++ (" ".rep indent)
+          newText := command ++ "\n" ++ " ".rep indent
           }],
         }
         nextLocation := ⟨position'', position''⟩
