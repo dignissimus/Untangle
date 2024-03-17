@@ -14,5 +14,5 @@ Open the `Example.lean` file and follow the instructions
 
 # Notes
 
-* This is a proof of concept and isn't yet ready for general purpose use. 
+* This proof of concept is work in progress and is not yet ready for general purpose use. 
 * There are issues with running this extension in GitHub codespaces, please use a Visual Studio instance running locally on your own computer.
