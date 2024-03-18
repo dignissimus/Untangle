@@ -610,24 +610,24 @@ def isMonadEta? (expression : Expr) :=
     | some (`CategoryTheory.Monad.η, #[_, _, _]) => true
     | _ => false
 
-def withIndent (indent : ℕ) (s : String) := s.split (. = '\n') |> List.map (" ".rep indent ++ .) |> String.join
+def withIndent (indent : ℕ) (s : String) := s.splitOn "\n" |> List.map (" ".rep indent ++ .) |> List.intersperse "\n" |> String.join
 
 
 
 -- TODO: Remove excessive whitespace
 def Conv (ts : List String) :=
-  let commands := ts |> List.map (λ s ↦ s.split (. = '\n')) |> List.join |> List.map ("\r\n" ++ " ".rep 2 ++ .) |> String.join;
-  "conv => {" ++ commands ++ "\r\n}"
+  let commands := ts |> List.map (λ s ↦ s.splitOn "\n") |> List.join |> List.map ("\n" ++ " ".rep 2 ++ .) |> String.join;
+  "conv => {" ++ commands ++ "\n}"
 
 def Enter (n : ℕ) := s!"enter [{n}]"
 def Slice (l r : ℕ) := s!"slice {l} {r}"
-def trySimp := (. ++ "\r\ntry simp only [CategoryTheory.Category.assoc]")
+def trySimp := (. ++ "\ntry simp only [CategoryTheory.Category.assoc]")
 def Symm := ("← " ++ .)
 def Repeat := ("repeat " ++ .)
 def Rewrite : List String → String
   | [] => ""
   | [t] => s!"rw [{t}]"
-  | ts => "rw [" ++ (ts.map ("\r\n  " ++ . ++ ",") |> String.join) ++ "\r\n]"
+  | ts => "rw [" ++ (ts.map ("\n  " ++ . ++ ",") |> String.join) ++ "\n]"
 def MapComp := "CategoryTheory.Functor.map_comp"
 
 
@@ -752,7 +752,7 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
 end GraphicalTactic
 
 namespace String
-def lines (s : String) := s.split (. = '\r')
+def lines (s : String) := s.splitOn "\n"
 end String
 
 def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument) :=
