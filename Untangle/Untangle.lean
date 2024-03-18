@@ -614,21 +614,29 @@ def withIndent (indent : ℕ) (s : String) := s.split (. = '\n') |> List.map (" 
 
 
 
+-- TODO: Remove excessive whitespace
 def Conv (ts : List String) :=
-  let commands := ts.map ("\r\n" ++ " ".rep 2 ++ .) |> String.join;
+  let commands := ts |> List.map (λ s ↦ s.split (. = '\n')) |> List.join |> List.map ("\r\n" ++ " ".rep 2 ++ .) |> String.join;
   "conv => {" ++ commands ++ "\r\n}"
 
 def Enter (n : ℕ) := s!"enter [{n}]"
 def Slice (l r : ℕ) := s!"slice {l} {r}"
 def trySimp := (. ++ "\r\ntry simp only [CategoryTheory.Category.assoc]")
+def Symm := ("← " ++ .)
+def Repeat := ("repeat " ++ .)
+def Rewrite : List String → String
+  | [] => ""
+  | [t] => s!"rw [{t}]"
+  | ts => "rw [" ++ (ts.map ("\r\n  " ++ . ++ ",") |> String.join) ++ "\r\n]"
+def MapComp := "CategoryTheory.Functor.map_comp"
 
 
-def buildTactic (tactic : String) (side : Side) (location : ℕ) (indent : ℕ) :=
-  Conv [
+
+def buildTactic (tactics : List String) (side : Side) (location : ℕ) (indent : ℕ) :=
+  [
     Enter side.toNat,
     Slice location (location + 1),
-    tactic,
-  ] |> trySimp |> withIndent indent
+  ] ++ tactics |> Conv |> trySimp |> withIndent indent
 
 structure EditDocument where
   edit : Lsp.TextDocumentEdit
@@ -685,7 +693,7 @@ def GraphicalTactic :=
 -- TODO: I have access to the Lean Expr so I don't need to build strings
 --  I can build tactics as Expr/Syntax and
 --   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
-def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
+def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option (List String) :=
   do
     let (prettyFirst, prettySecond) ← goal.ctx.val.runMetaM {} do
       let md ← goal.mvarId.getDecl
@@ -705,19 +713,40 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
     let secondIsMonadEta := isMonadEta? exp₂
 
     if firstIsMonadEta && secondIsMonadMu then
-      if first.functorApplications ≥ 1 then
-        return s!"rw [T.right_unit]"
+      let mut tactics := [Repeat $ Rewrite [Symm MapComp]]
+      -- TODO: Functor names should be the same
+      if first.functorApplications > second.functorApplications then
+        tactics := tactics.concat $ Rewrite ["Monad.right_unit"]
       else
-        return s!"rw [T.left_unit]"
+        tactics := tactics.concat $ Rewrite ["Monad.left_unit"]
+      tactics := tactics.concat $ Repeat (Rewrite [MapComp])
+      return tactics
     else if firstIsMonadMu && secondIsMonadMu then
-      if first.functorApplications = 1 then
-        return s!"rw [Monad.assoc]"
+      let mut tactics := [Repeat $ Rewrite [Symm MapComp]]
+      if first.functorApplications > second.functorApplications then
+        tactics := tactics.concat $ Rewrite ["Monad.assoc"]
       else
-        return s!"rw [← Monad.assoc]"
+        tactics := tactics.concat $ Rewrite ["← Monad.assoc"]
+      tactics := tactics.concat $ Repeat (Rewrite [MapComp])
+      return tactics
     else if first.isNaturalTransformation then
-      return s!"rw [← ({prettyFirst}).naturality ({prettySecond}), CategoryTheory.Functor.comp_map]"
+      return [
+        Repeat $ Rewrite [Symm MapComp],
+        Rewrite [
+          Symm s!"({prettyFirst}).naturality ({prettySecond})",
+          "CategoryTheory.Functor.comp_map"
+        ],
+        Repeat $ Rewrite [MapComp]
+      ]
     else if second.isNaturalTransformation then
-      return s!"rw [← CategoryTheory.Functor.comp_map, ({prettySecond}).naturality ({prettyFirst})]"
+      return [
+        Repeat $ Rewrite [Symm MapComp],
+        Rewrite [
+          Symm "CategoryTheory.Functor.comp_map",
+          s!"({prettySecond}).naturality ({prettyFirst})"
+        ],
+        Rewrite [MapComp]
+      ]
     return .none
 end GraphicalTactic
 
