@@ -1,0 +1,9 @@
+tasks:
+  - name: Install Lean
+    command: |
+      curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- --default-toolchain leanprover/lean4:v4.6.1 -y
+      echo 'export PATH="$HOME/.elan/bin:$PATH"' >> $HOME/.bashrc
+
+vscode:
+  extensions:
+    - leanprover.lean4

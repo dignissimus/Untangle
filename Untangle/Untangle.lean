@@ -712,6 +712,7 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
     let firstIsMonadEta := isMonadEta? exp₁
     let secondIsMonadEta := isMonadEta? exp₂
 
+    -- TODO: Only include the `repeat map_comp` lines when necessary (i.e. check the functor lift count)
     if firstIsMonadEta && secondIsMonadMu then
       let mut tactics := [Repeat $ Rewrite [Symm MapComp]]
       -- TODO: Functor names should be the same
