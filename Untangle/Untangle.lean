@@ -746,7 +746,7 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
           Symm "CategoryTheory.Functor.comp_map",
           s!"({prettySecond}).naturality ({prettyFirst})"
         ],
-        Rewrite [MapComp]
+        Repeat $ Rewrite [MapComp]
       ]
     return .none
 end GraphicalTactic
