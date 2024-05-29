@@ -62,30 +62,6 @@ end Expression
 
 instance : ToString (Expression α) := ToString.mk reprStr
 
-partial def prettyPrint (f : Expr → MetaM Format) : Expression α → MetaM String
-  | Expression.MorphismComposition _ first second => return s!"({← prettyPrint f first}) ≫ {← prettyPrint f second}"
-  | Expression.LiftMap functor arrow => return s!"({← prettyPrint f functor}) ({← prettyPrint f arrow})"
-  | Expression.LiftObject functor object => return s!"({← prettyPrint f functor}) ({← prettyPrint f object})"
-  | Expression.FunctorComposition first second => return s!"({← prettyPrint f first}) ⋙ (← prettyPrint f second)"
-  | Expression.Morphism morphism source target => return s!"({← f morphism} : {←prettyPrint f source} ⟶ {← prettyPrint f target})"
-  | Expression.Functor functor source target => return s!"({← f functor} : {←prettyPrint f source} ⥤ {← prettyPrint f target})"
-  | Expression.NaturalTransformationComponent transformation object F G => return s!"({← prettyPrint f transformation} : ({←prettyPrint f F} {←prettyPrint f object } ⟶ {←prettyPrint f G} {←prettyPrint f object }"
-  | Expression.NaturalTransformation transformation F G => return s!"({← f transformation} : {← prettyPrint f F} ⟶ {← prettyPrint f G})"
-  | Expression.Object object => return s!"{← f object }"
-  | Expression.DebugExpression e => return s!"Debug \{ { ← f e } }"
-  | Expression.PlainExpression e => return s!"⟦ { ← f e } ⟧ "
-  | e => return s!" [ { e } ]"
-
--- TODO, complete
-partial def prettify (f : Expr → MetaM Format) : Expression α → (MetaM $ Expression α)
-  | Expression.MorphismComposition expression first second => return Expression.MorphismComposition expression (← prettify f first) (← prettify f second)
-  | Expression.LiftMap functor arrow => return Expression.LiftMap (← prettify f functor) (← prettify f arrow)
-  | Expression.FunctorComposition first second => return Expression.FunctorComposition (← prettify f first) (← prettify f second)
-  | Expression.Morphism morphism source target => return Expression.DebugString s!"{(← toString <$> f morphism)} : {← prettify f source} ⟶ {← prettify f target} "
-  | Expression.Functor functor source target => return Expression.DebugString s!"{(← toString <$> f functor)} : {← prettify f source} ⟶ {← prettify f target} "
-  | Expression.DebugExpression e => return Expression.DebugString (← toString <$> f e)
-  | e => return e
-
 -- TODO
 def parseDeclaration (e : Expr) := do return some (← toString <$> Lean.Meta.ppExpr e, e.getAppFn)
 
@@ -344,27 +320,6 @@ def isNaturalTransformation : DiagramComponent → Bool
 
 end DiagramComponent
 
-
-def intersection [BEq α] (ℓ₁ ℓ₂ : List α) : List α := do
-  let xᵢ ← ℓ₁
-  guard (ℓ₂.contains xᵢ)
-  return xᵢ
-
-def disjoint [BEq α] (ℓ₁ ℓ₂ : List α) := (intersection ℓ₁ ℓ₂).length  == 0
-
--- Whether we can move two natural transformations past eachother in the diagram
-def canSwap (d₁ d₂ : DiagramComponent) : Bool := disjoint d₁.outputs d₂.inputs
-
-def swap(d₁ d₂ : DiagramComponent) : Option (DiagramComponent × DiagramComponent) := do
-  guard (canSwap d₁ d₂)
-  let δ := d₁.transformation.numberOfOutputs - d₁.transformation.numberOfInputs
-
-  -- If d₁ is to the left of d₂
-  if d₁.transformation.right < d₂.transformation.left then
-    return (d₂.shiftLeft δ, d₁)
-  else
-    return (d₂, d₁.shiftRight δ )
-
 abbrev Diagram := List DiagramComponent
 
 -- Note be careful with the following cases
@@ -445,27 +400,12 @@ instance : ToString Side where
 
 instance : ToJson Side := ToJson.mk (Json.str ∘ toString)
 
-open scoped Jsx in
-def readInfo (hyps : Array LocalDecl) : MetaM (Option Html) := do
-  let mut information : HashMap String _ := .empty
-
-  for assm in hyps do
-     if let some (name, info) := ← parseDeclaration (← instantiateMVars assm.type) then
-      information := information.insert name info
-
-  return some $ <span>Partially working {.text <| toString <| information.toList } </span>
-
 def isCategoricalEquality? (e : Expr) : Option (Expr × Expr) :=
-  let drop1 := λ (_, b, c) ↦ (b, c);
-  drop1 <$> e.app3? ``Eq
-
-
-def joinDiv(ls : List Html) : Html :=
-  Html.element "div" #[] ls.toArray
+  let removeType := λ (_, lhs, rhs) ↦ (lhs, rhs);
+  removeType <$> e.app3? ``Eq
 
 def joinDivHorizontal (ls : List Html) : Html :=
   Html.element "div" #[("style", Json.mkObj [("display", Json.str "flex"), ("justifyContent", Json.str "space-around")])] ls.toArray
-
 
 def textStyle := Json.mkObj [("color", Json.str "#00003e"), ("text-decoration", "none")]
 
@@ -551,7 +491,6 @@ def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.Inter
       let alpha := s!"X{counter}"
       counter := counter + 1
 
-      -- TODO: Don't assume this diagram is in the left hand side, add a side parameter to this function
       embeds := embeds.push (alpha, read $ transformationLabel Lean.Meta.ppExpr component.transformation side row 0)
       row := row + 1
       diagramString := diagramString ++ s!"NaturalTransformationLike {alpha}\n"

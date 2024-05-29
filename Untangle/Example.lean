@@ -34,17 +34,11 @@ example : T.map (T.η.app X) ≫ T.μ.app _ = (Monad.η T).app (T.obj X) ≫ (Mo
 
     -- 1. Click η and μ to apply the unit law for the Monad natural transformations
     -- 2. Do the same on the other side of the diagram
-    -- Place cursor on this line try simp;
-
+    -- Place cursor on this line
 
 
   }
 
--- The same thing as above but for T (T X)
-example : T.η.app (T.obj $ T.obj X) ≫ T.μ.app _ = (CategoryStruct.id $ T.obj $ T.obj X) := by with_panel_widgets [Untangle] {
-  -- Place cursor on this line
-
-}
 
 
 lemma filter_join_eq_join_filter'
@@ -54,12 +48,12 @@ lemma filter_join_eq_join_filter'
   {guard' : X ⟶ T.obj X }
   : T.μ.app _ ≫ T.map guard' ≫ T.μ.app _ = T.map (T.map guard') ≫ T.map (T.μ.app _) ≫ T.μ.app _
   := by with_panel_widgets [Untangle] {
+
     -- 1. Click guard' and Monad.μ T to swap the order using the naturality of μ
     -- 2. Click back so that the cursor is in the editor to update the diagram
     -- 3. click the two Monad.μ boxes to apply the associativity law
 
     -- Put cursor on this line
-
 
   }
 
@@ -81,6 +75,24 @@ example
     rw [reassoc_of% h]
   }
 
+
+-- Test cases for functor lifting
+
+example : T.map ( T.map ( (Monad.μ T).app (T.obj X) ) ) ≫ T.map ( T.map ((Monad.μ T).app X )) = T.map ( T.map ( T.map ( (Monad.μ _).app _ ) ) ) ≫ T.map ( T.map ((Monad.μ _).app _  ) ):= by with_panel_widgets [Untangle] {
+
+
+}
+
+example : T.map ( (Monad.μ T).app (T.obj X) ) ≫ T.map ((Monad.μ T).app X ) = T.map ( T.map ( (Monad.μ _).app _ ) ) ≫ T.map ((Monad.μ _).app _  ):= by with_panel_widgets [Untangle] {
+
+
+}
+
+-- The same thing as above but for T (T X)
+example : T.η.app (T.obj $ T.obj X) ≫ T.μ.app _ = (CategoryStruct.id $ T.obj $ T.obj X) := by with_panel_widgets [Untangle] {
+  -- Place cursor on this line
+
+}
 
 open scoped CategoryTheory.Monad
 
