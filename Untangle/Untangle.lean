@@ -9,398 +9,21 @@ import ProofWidgets.Component.OfRpcMethod
 import Mathlib.Init.Data.List.Instances
 import Mathlib.Init.Control.Combinators
 import Mathlib.Data.String.Defs
+import Untangle.Parsing.Auxiliary
+import Untangle.Data.Expression
+import Untangle.Data.Diagram
+import Untangle.Structure.Monad
+import Untangle.Tactic.Auxiliary
 
 open Lean Meta Server Expr
 open ProofWidgets
 
-inductive ExpressionType where
-  | Functor
-  | Morphism
-  | NaturalTransformation
-  | Category
-  | Object
-
-inductive Expression : ExpressionType → Type where
-  | Category (expression: Expr) : Expression Category
-  | Object (expression: Expr) : Expression ExpressionType.Object
-  | Morphism (expression: Expr) (source: Expression ExpressionType.Object) (target: Expression ExpressionType.Object) : Expression ExpressionType.Morphism
-  | NaturalTransformation (expression: Expr) (source: Expression ExpressionType.Functor) (target: Expression ExpressionType.Functor) : Expression NaturalTransformation
-  | NaturalTransformationComponent (naturalTransformation : Expression ExpressionType.NaturalTransformation) (object : Expression ExpressionType.Object) (source : Expression ExpressionType.Functor) (target : Expression ExpressionType.Functor): Expression ExpressionType.Morphism
-  | Functor (expression: Expr) (source: Expression ExpressionType.Object) (target: Expression ExpressionType.Object) : Expression ExpressionType.Functor
-  | FunctorComposition (left : Expression ExpressionType.Functor) (right : Expression ExpressionType.Functor) : Expression ExpressionType.Functor
-  | MorphismComposition (expression : Expr) (first: Expression ExpressionType.Morphism) (second: Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
-  | LiftObject (functor : Expression ExpressionType.Functor) (object : Expression ExpressionType.Object) : Expression ExpressionType.Object
-  | LiftMap (functor : Expression ExpressionType.Functor) (arrow : Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
-  | PlainExpression (expression : Expr) : Expression _
-  | DebugExpression (expression : Expr) : Expression _
-  | DebugString (s: String) : Expression _
-  deriving Repr
-
-namespace Expression
-  def countFunctorApplications : Expression ExpressionType.Functor → Nat
-    | Functor _ _ _ => 1
-    | FunctorComposition left right => left.countFunctorApplications + right.countFunctorApplications
-    | _ => unreachable!
-
-  def countObjectLifts : Expression ExpressionType.Object → Nat
-    | Object  _ => 0
-    | LiftObject _ object => 1 + object.countObjectLifts
-    | _ => unreachable!
-
-  def source : Expression ExpressionType.Morphism → Option (Expression ExpressionType.Object)
-    | Morphism _ source _ => source
-    | MorphismComposition _ f g => f.source
-    | _ => unreachable!
-
-  def target : Expression ExpressionType.Morphism → Option (Expression ExpressionType.Object)
-    | Morphism _ _ target => target
-    | MorphismComposition _ f g => g.target
-    | _ => unreachable!
-
-
-end Expression
-
-instance : ToString (Expression α) := ToString.mk reprStr
-
 -- TODO
 def parseDeclaration (e : Expr) := do return some (← toString <$> Lean.Meta.ppExpr e, e.getAppFn)
 
-/- Utilities -/
-def withAppAux? (k : Expr → Array Expr → α) : Expr → Array Expr → Nat → Option α
-  | app f a, as, i => some $ withAppAux k f (as.set! i a) (i-1)
-  | _, _, _ => none
-
-@[inline] def withApp? (e : Expr) (k : Expr → Array Expr → α) : Option α :=
-  let dummy := mkSort levelZero
-  let nargs := e.getAppNumArgs
-  withAppAux? k e (mkArray nargs dummy) (nargs-1)
-
-/-def constName (e : Expr) : Name :=
-  e.constName?.getD Name.anonymous-/
-
-def getAppFnArgs? (e : Expr) : Option $ Name × Array Expr :=
-  withApp? e λ e a => (constName e, a)
 /- -/
 
-
-def orElse (f g : α → Option β) : α → Option β
-  | x => (f x).orElse (λ _ ↦ g x)
-
-infixl:65 " or " => orElse
-macro_rules
-  | `(fail) => `(do ← none)
-
-
-def unknown : Expression α := Expression.DebugString "?"
-def morphismFromTo : Expression ExpressionType.Morphism → Expression ExpressionType.Object → Expression ExpressionType.Object → Expression ExpressionType.Morphism
-  | (Expression.Morphism morphism _ _), X, Y => Expression.Morphism morphism X Y
-  | e, _, _ => e
-
-
-def natTransFromTo : Expression ExpressionType.NaturalTransformation → Expression ExpressionType.Functor → Expression ExpressionType.Functor → Expression ExpressionType.NaturalTransformation
-  | (Expression.NaturalTransformation transformation _ _), F, G => Expression.NaturalTransformation transformation F G
-  | e, _, _ => e
-
-mutual
-  partial def parseHom (e : Expr) : Option (Expr × Expr) :=
-    match getAppFnArgs? e with
-      | some (`Quiver.Hom, #[_, _, X, Y]) => return (X, Y)
-      | _ => fail
-
-  partial def parseMorphismComposition (e: Expr) : Option (Expression ExpressionType.Morphism) := do
-    match getAppFnArgs? e with
-      | some (`CategoryTheory.CategoryStruct.comp, #[_, _, X, Y, Z, f, g]) =>
-        return Expression.MorphismComposition e
-          ( morphismFromTo (← parseMorphism f) (←parseObject X) (←parseObject Y ))
-          ( morphismFromTo (← parseMorphism g) (← parseObject Y)  (← parseObject Z))
-      | _ => fail
-
-
-  -- TODO: Major
-  partial def parseFunctorComposition (e: Expr) : Option (Expression ExpressionType.Functor) := do
-    match getAppFnArgs? e with
-      | some (`CategoryTheory.Functor.comp, #[_, _, _, _, _, _, F, G]) => Expression.FunctorComposition (← parseFunctor F) (←parseFunctor G)
-      | _ => fail
-
-  -- TODO
-  partial def parseSingleton (e : Expr) : Option (Expression α) := return Expression.DebugExpression e
-
-  partial def parseExpression (e : Expr) : Option (Expression α) := return Expression.PlainExpression e
-
-
-  partial def parseIdentityMorphism(e : Expr) : Option (Expression ExpressionType.Morphism) := do
-    match getAppFnArgs? e with
-      | some (`CategoryTheory.CategoryStruct.id, #[_, _, X]) => Expression.Morphism e (← parseObject X) (← parseObject X)
-      | _ => fail
-
-  -- TODO: Parse the source and destination from the type of the morphism
-  partial def parseMorphismName (e : Expr) : Option (Expression ExpressionType.Morphism) :=  return Expression.Morphism e unknown unknown
-  partial def parseObjectName (e : Expr) : Option (Expression ExpressionType.Object) :=  return Expression.Object e
-
-
-  -- TODO
-  partial def parseFunctorName (expression : Expr) : Option (Expression ExpressionType.Functor) :=
-    match getAppFnArgs? expression with
-        | some (`CategoryTheory.Functor.toPrefunctor, #[_, _, C, D]) => do return Expression.Functor expression unknown unknown
-        | some (`CategoryTheory.Monad.toFunctor, #[_, _, functor]) => do return Expression.Functor expression unknown unknown
-        -- TODO maybe
-        | e => Expression.Functor expression unknown unknown
-        -- `CategoryTheory.Monad.toFunctor
-
-  partial def parseMorphismLift (e : Expr) : Option (Expression ExpressionType.Morphism) :=
-    match getAppFnArgs? e with
-      | some (`Prefunctor.map, #[_, _, _, _, functor, X, Y, f]) =>
-        return Expression.LiftMap
-          (← parseFunctor functor)
-          (morphismFromTo (← parseMorphism f) (←parseObject X) (← parseObject Y))
-      | _ => fail
-
-  partial def parseObjectLift (e : Expr) : Option (Expression ExpressionType.Object) :=
-    match getAppFnArgs? e with
-      | some (`Prefunctor.obj, #[_, _, _, _, functor, object]) =>
-        return Expression.LiftObject
-          (← parseFunctor functor)
-          (← parseObject object)
-      | _ => fail
-
-
-  partial def parseNaturalTransformationComponent (e : Expr) : Option (Expression ExpressionType.Morphism) :=
-    match getAppFnArgs? e with
-      | some (`CategoryTheory.NatTrans.app, #[_, _, _, _, F, G, η, X]) =>
-        return Expression.NaturalTransformationComponent
-          ( natTransFromTo (← parseNaturalTransformation η) (← parseFunctor F) (←parseFunctor G) )
-          (← parseObject X)
-          (← parseFunctor F)
-          (← parseFunctor G)
-      | _ => fail
-
-  partial def parseNaturalTransformation  (e : Expr): Option (Expression ExpressionType.NaturalTransformation) := return Expression.NaturalTransformation e unknown unknown
-  partial def parseObject : Expr → Option (Expression ExpressionType.Object) :=
-    parseObjectLift
-    or parseObjectName
-
-  partial def parseFunctor : Expr → Option (Expression ExpressionType.Functor) :=
-    parseFunctorComposition
-    or parseFunctorName
-
-  partial def parseMorphism : Expr → Option (Expression ExpressionType.Morphism) :=
-    parseMorphismLift
-    or parseMorphismComposition
-    or parseNaturalTransformationComponent
-    or parseIdentityMorphism
-    or parseMorphismName
-
-  -- partial def parseDiagram : Expr → Option (Expression _) :=
-  --   parseFunctorComposition
-  --   or parseMorphismComposition -- TODO: Bad name
-  --   or parseSingleton
-end
-
-namespace Diagram
-
-inductive FunctorLike where
-  | Functor (expr : Expr)
-  | Object (expr : Expr)
-deriving Repr, BEq
-
-namespace FunctorLike
-  def isIdentity : FunctorLike → Bool
-    | Functor functor => match getAppFnArgs? functor with
-      | some (`CategoryTheory.Functor.id, #[C, _]) => true
-      | _ => false
-    | _ => False
-  /- def name : FunctorLike → String
-    | Functor name => name
-    | Object name => name -/
-end FunctorLike
-
-inductive TransformationLike where
-  | NaturalTransformation (expr : Expr)
-  | Morphism (expr : Expr)
-deriving Repr, BEq
-
-namespace TransformationLike
-  def expression : TransformationLike → Expr
-    | NaturalTransformation expression => expression
-    | Morphism expression => expression
-
-def isIdentity (α : TransformationLike) : Bool :=
-  match getAppFnArgs? α.expression with
-    | some (`CategoryTheory.CategoryStruct.id, #[_, _, _]) => true
-    | _ => false
-end TransformationLike
-
-structure Transformation where
-  label : TransformationLike
-  -- Inclusive range
-  left : Nat
-  right : Nat
-
-  -- How many outputs this transformation has
-  numberOfOutputs : Nat
-
-deriving Repr
-namespace Transformation
-  def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
-  def inputs (α : Transformation) := range α.left α.right
-  def isIdentity (α : Transformation) := α.label.isIdentity
-
-  def numberOfInputs (α : Transformation) := α.right - α.left + 1
-  def outputStart (α : Transformation) := α.left
-  def outputEnd (α : Transformation) := α.left + α.numberOfOutputs - 1
-  def outputs(α : Transformation) := range α.outputStart α.outputEnd
-end Transformation
-
-structure DiagramComponent where
-  inputs : List FunctorLike
-  transformation: Transformation
-  outputs : List FunctorLike
-  location : ℕ
-  functorApplications : ℕ := 0
-deriving Repr
-
-instance : ToString (DiagramComponent) := ToString.mk reprStr
-
-partial def simplifyFunctor (expression : Expr) : Expr :=
-    match getAppFnArgs? expression with
-        | some (`CategoryTheory.Functor.toPrefunctor, #[_, _, _, _, functor]) => simplifyFunctor functor
-        | some (`CategoryTheory.Monad.toFunctor, #[_, _, monad]) => simplifyFunctor $ monad
-        -- TODO maybe
-        | _ => expression
-
-def raw : Expression α → Expr
-  | .Object object => object
-  | .Morphism morphism _ _ => morphism
-  | .NaturalTransformation transformation _ _ => transformation
-  -- | NaturalTransformationComponent (naturalTransformation : Expression ExpressionType.NaturalTransformation) (object : Expression ExpressionType.Object) (source : Expression ExpressionType.Functor) (target : Expression ExpressionType.Functor): Expression ExpressionType.Morphism
-  | .Functor functor _ _ => simplifyFunctor functor
-  | _ => Expr.const `Eq [.succ .zero]
-  -- | FunctorComposition (left : Expression ExpressionType.Functor) (right : Expression ExpressionType.Functor) : Expression ExpressionType.Functor
-  -- | MorphismComposition (first: Expression ExpressionType.Morphism) (second: Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
-  -- | LiftObject (functor : Expression ExpressionType.Functor) (object : Expression ExpressionType.Object) : Expression ExpressionType.Object
-  -- | LiftMap (functor : Expression ExpressionType.Functor) (arrow : Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
-  -- | PlainExpression (expression : Expr) : Expression _
-  -- | DebugExpression (expression : Expr) : Expression _
-  -- | DebugString (s: String) : Expression _
-namespace DiagramComponent
-
-def expression (d : DiagramComponent) : Expr := d.transformation.label.expression
-
-def swap (d : DiagramComponent) : DiagramComponent := {d with inputs := d.outputs, outputs := d.inputs}
-
-def shiftLeft (d : DiagramComponent) (shift : Nat) : DiagramComponent := {
-    d with
-      transformation.left := d.transformation.left - shift
-      transformation.right := d.transformation.right - shift
-}
-
-def shiftRight (d : DiagramComponent) (shift : Nat) : DiagramComponent := {
-    d with
-      transformation.left := d.transformation.left + shift
-      transformation.right := d.transformation.right + shift
-}
-
-abbrev shift := shiftRight
-
-
--- Major TODO
-def applyFunctor (d : DiagramComponent) (functor : Expression ExpressionType.Functor) : DiagramComponent :=
-  let fexp := raw functor;
-  {
-    d with
-    inputs := d.inputs ++ [FunctorLike.Functor fexp]
-    outputs := d.outputs ++ [FunctorLike.Functor fexp]
-    functorApplications := d.functorApplications + 1
-}
-
-def isNaturalTransformation : DiagramComponent → Bool
-  | {transformation ..} => match transformation.label with
-    | .NaturalTransformation _ => True
-    | _ => False
-
-end DiagramComponent
-
-abbrev Diagram := List DiagramComponent
-
--- Note be careful with the following cases
---  μ : (F ⋙ G) ⟶ (F ⋙ G') where μ is not T.map μ'
-def expressionAsDiagramInput : Expression α →  List FunctorLike
-  | Expression.Object object => [FunctorLike.Object object]
-  | Expression.LiftObject functor object => expressionAsDiagramInput object ++ [FunctorLike.Functor (raw functor)]
-  | Expression.Functor functor _source _target => [FunctorLike.Functor functor]
-  | Expression.FunctorComposition left right => expressionAsDiagramInput left ++ expressionAsDiagramInput right
-  | e => panic! s!"As input: {e}"
-
-partial def morphismAsDiagramComponent (location : ℕ) : Expression ExpressionType.Morphism → Option DiagramComponent
-  -- I make the assumption that morphisms map from the source category
-  -- But this only holds when the expression is normalised
-  -- i.e. let f := T.map f'; f ≫ g'
-  -- TODO
-  | Expression.Morphism expr source target =>
-    do
-    let outputs := expressionAsDiagramInput target
-      return {
-      inputs := expressionAsDiagramInput source
-      transformation := {
-        label := TransformationLike.Morphism expr, -- TODO: Read from expr, take MetaM as parameter
-        left := 0,
-        right := source.countObjectLifts,
-        numberOfOutputs := outputs.length
-      }
-      location
-      outputs := outputs
-    }
-  -- TODO: Below case
-  | Expression.LiftMap functor morphism => do (← morphismAsDiagramComponent location morphism).applyFunctor functor
-  -- TODO: Below case
-  -- Might require context? If μ : (T ⋙ T)
-  | Expression.NaturalTransformationComponent transformation object source target =>
-    do
-      return {
-        inputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput source)
-        transformation := {
-          label := TransformationLike.NaturalTransformation (raw transformation) -- Read from expr
-          left := 1 + object.countObjectLifts
-          right := object.countObjectLifts + source.countFunctorApplications
-          numberOfOutputs := target.countFunctorApplications
-        }
-        location
-        outputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput target)
-      }
-  -- TODO: Maybe normalise so this doesn't occur. i.e repeat rw [Functor.comp_assoc]
-  -- | Expression.MorphismComposition expr f g => return (← morphismAsDiagramComponent $ Expression.Morphism expr (← f.source) (← g.target))
-  | e => panic! s!"Unreachable: {e}"
-
-def constructMorphismDiagram (location : ℕ): Expression ExpressionType.Morphism → Option Diagram
-  | Expression.MorphismComposition  _ first second => do
-    let left ← constructMorphismDiagram location first
-    let last ← left.getLast?
-    let offset := last.location + 1
-    let right ← constructMorphismDiagram offset second
-    return left ++ right
-  | morphism => do [← morphismAsDiagramComponent location morphism]
-
-end Diagram
-
-inductive Side where
-  | Left
-  | Right
-deriving Repr, RpcEncodable
-
-namespace Side
-def toNat : Side → ℕ
-  | Left => 1
-  | Right => 2
-end Side
-
-instance : ToString Side where
-  toString : Side → String
-    | .Left => "Left"
-    | .Right => "Right"
-
-instance : ToJson Side := ToJson.mk (Json.str ∘ toString)
-
-def isCategoricalEquality? (e : Expr) : Option (Expr × Expr) :=
+def isEquality? (e : Expr) : Option (Expr × Expr) :=
   let removeType := λ (_, lhs, rhs) ↦ (lhs, rhs);
   removeType <$> e.app3? ``Eq
 
@@ -420,11 +43,9 @@ def transformationLabel (f : Expr → MetaM γ) [ToString γ] (transformation : 
 
 def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
 
-namespace String
-  def rep (s : String) : ℕ → String
-    | 0 => ""
-    | n + 1 => s ++ s.rep n
-end String
+
+
+def language := Monad.monad
 
 open scoped Jsx in
 def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) : IO Html := do
@@ -494,14 +115,14 @@ def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.Inter
       embeds := embeds.push (alpha, read $ transformationLabel Lean.Meta.ppExpr component.transformation side row 0)
       row := row + 1
       diagramString := diagramString ++ s!"NaturalTransformationLike {alpha}\n"
-      if component.transformation.isIdentity then
+      if component.transformation.isIdentity language then
         for (F, G) in List.zip previousIdentifiers currentIdentifiers do
           diagramString := diagramString ++ s!"WouldTransform({F}, {alpha})\n"
       else
         for index in range component.transformation.left component.transformation.right do
           let F := previousIdentifiers[index]!
           -- Don't draw identity morphisms or identity functors
-          if !(component.inputs[index]'sorry).isIdentity then
+          if !(component.inputs[index]'sorry).isIdentity language then
             diagramString := diagramString ++ s!"Transform({F}, {alpha})\n"
 
         for index in component.transformation.outputs do
@@ -539,43 +160,7 @@ structure ClickEvent where
   deriving RpcEncodable
 
 
-def isMonadMu? (expression : Expr) :=
-  match getAppFnArgs? expression with
-    | some (`CategoryTheory.Monad.μ, #[_, _, _]) => true
-    | _ => false
 
-def isMonadEta? (expression : Expr) :=
-  match getAppFnArgs? expression with
-    | some (`CategoryTheory.Monad.η, #[_, _, _]) => true
-    | _ => false
-
-def withIndent (indent : ℕ) (s : String) := s.splitOn "\n" |> List.map (" ".rep indent ++ .) |> List.intersperse "\n" |> String.join
-
-
-
--- TODO: Remove excessive whitespace
-def Conv (ts : List String) :=
-  let commands := ts |> List.map (λ s ↦ s.splitOn "\n") |> List.join |> List.map ("\n" ++ " ".rep 2 ++ .) |> String.join;
-  "conv => {" ++ commands ++ "\n}"
-
-def Enter (n : ℕ) := s!"enter [{n}]"
-def Slice (l r : ℕ) := s!"slice {l} {r}"
-def trySimp := (. ++ "\ntry simp only [CategoryTheory.Category.assoc]")
-def Symm := ("← " ++ .)
-def Repeat := ("repeat " ++ .)
-def Rewrite : List String → String
-  | [] => ""
-  | [t] => s!"rw [{t}]"
-  | ts => "rw [" ++ (ts.map ("\n  " ++ . ++ ",") |> String.join) ++ "\n]"
-def MapComp := "CategoryTheory.Functor.map_comp"
-
-
-
-def buildTactic (tactics : List String) (side : Side) (location : ℕ) (indent : ℕ) :=
-  [
-    Enter side.toNat,
-    Slice location (location + 1),
-  ] ++ tactics |> Conv |> trySimp |> withIndent indent
 
 structure EditDocument where
   edit : Lsp.TextDocumentEdit
@@ -584,122 +169,20 @@ deriving RpcEncodable
 
 namespace GraphicalTactic
 
-def orElse' (f g : X → Y → (RequestM $ Option α)) (x : X) (y : Y) : RequestM $ Option α :=
-  do
-    if let Option.some _ := (← f x y) then f x y
-    else g x y
 
-infixl:65 " or' " => orElse'
-macro_rules
-  | `(fail) => `(do ← none)
-
-
--- TODO: These rules have simple graphical rules which tell us whether or not we can apply them
---  I shouldn't generate tactics that will fail in lean
-
--- TODO: Be precise and split this into left unit and right unit rewrites
-
--- TODO: I'll probably want to package these into functions and write a combinator
-def monad_unit (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
-  do return do
-    if isMonadEta? first.expression && isMonadMu? second.expression then
-      return (← fail)
-    fail
-
-def monad_assoc (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String  :=
-  do return do
-    if isMonadMu? first.expression && isMonadMu? second.expression then
-      return (← fail)
-    fail
-
-def naturality  (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent)  : RequestM $ Option String:=
-  do
-    let prettyFirst : String ← sorry
-    let prettySecond : String ← sorry
-    return do
-      if first.isNaturalTransformation then
-        return (← fail)
-      if second.isNaturalTransformation then
-        return (← fail)
-      fail
-
-def GraphicalTactic :=
-  monad_unit
-  or' monad_assoc
-  or' naturality
-
--- TODO: Add more rewrite rules
--- TODO: I have access to the Lean Expr so I don't need to build strings
---  I can build tactics as Expr/Syntax and
---   suggest them along the lines of Lean.Meta.Tactic.TryThis.addSuggestion
-def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option (List String) :=
-  do
-    let (prettyFirst, prettySecond) ← goal.ctx.val.runMetaM {} do
-      let md ← goal.mvarId.getDecl
-      let lctx := md.lctx |>.sanitizeNames.run' {options := (← getOptions)}
-      Meta.withLCtx lctx md.localInstances do
-        return (
-          ← toString <$> Lean.Meta.ppExpr first.transformation.label.expression,
-          ← toString <$> Lean.Meta.ppExpr second.transformation.label.expression)
-
-    let exp₁ := first.transformation.label.expression
-    let exp₂ := second.transformation.label.expression
-
-    let firstIsMonadMu := isMonadMu? exp₁
-    let secondIsMonadMu := isMonadMu? exp₂
-
-    let firstIsMonadEta := isMonadEta? exp₁
-    let secondIsMonadEta := isMonadEta? exp₂
-
-    -- TODO: Only include the `repeat map_comp` lines when necessary (i.e. check the functor lift count)
-    if firstIsMonadEta && secondIsMonadMu then
-      let mut tactics := [Repeat $ Rewrite [Symm MapComp]]
-      -- TODO: Functor names should be the same
-      if first.functorApplications > second.functorApplications then
-        tactics := tactics.concat $ Rewrite ["Monad.right_unit"]
-      else
-        tactics := tactics.concat $ Rewrite ["Monad.left_unit"]
-      tactics := tactics.concat $ Repeat (Rewrite [MapComp])
-      return tactics
-    else if firstIsMonadMu && secondIsMonadMu then
-      let mut tactics := [Repeat $ Rewrite [Symm MapComp]]
-      if first.functorApplications > second.functorApplications then
-        tactics := tactics.concat $ Rewrite ["Monad.assoc"]
-      else
-        tactics := tactics.concat $ Rewrite ["← Monad.assoc"]
-      tactics := tactics.concat $ Repeat (Rewrite [MapComp])
-      return tactics
-    else if first.isNaturalTransformation then
-      return [
-        Repeat $ Rewrite [Symm MapComp],
-        Rewrite [
-          Symm s!"({prettyFirst}).naturality ({prettySecond})",
-          "CategoryTheory.Functor.comp_map"
-        ],
-        Repeat $ Rewrite [MapComp]
-      ]
-    else if second.isNaturalTransformation then
-      return [
-        Repeat $ Rewrite [Symm MapComp],
-        Rewrite [
-          Symm "CategoryTheory.Functor.comp_map",
-          s!"({prettySecond}).naturality ({prettyFirst})"
-        ],
-        Repeat $ Rewrite [MapComp]
-      ]
-    return .none
 end GraphicalTactic
 
 namespace String
 def lines (s : String) := s.splitOn "\n"
 end String
 
+
 def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument) :=
   RequestM.asTask do
     let (lhs, rhs) := ← match (← do
           event.goal.ctx.val.runMetaM {} do
             let declaration ←  event.goal.mvarId.getDecl
-            return isCategoricalEquality? declaration.type
+            return isEquality? declaration.type
         ) with
           | some x => return x
           | _ => throw $ .invalidParams s!"Goal is not equality"
@@ -708,8 +191,8 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
       let lctx := md.lctx |>.sanitizeNames.run' {options := (← getOptions)}
       Meta.withLCtx lctx md.localInstances do
         return (
-          (parseMorphism lhs).getD (Expression.DebugString "Fail")
-          , (parseMorphism rhs).getD (Expression.DebugString "Fail")
+          (language.parseExpression lhs).getD (Expression.DebugString "Fail")
+          , (language.parseExpression rhs).getD (Expression.DebugString "Fail")
         )
 
 
@@ -738,7 +221,7 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
     let (indent, isStart) := Lean.findIndentAndIsStart fm.source spos
 
     -- TODO: I don't want to panic if we can't apply a tactic
-    let tacticString' ← GraphicalTactic.generateTactic event.goal first second
+    let tacticString' ← language.generateTactic event.goal first second
     if let .none := tacticString' then return fail
     let tacticString := tacticString'.get!
 
@@ -790,7 +273,7 @@ def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
     let (lhs, rhs) := ← match (← do
       goal.ctx.val.runMetaM {} do
         let declaration ←  goal.mvarId.getDecl
-        return isCategoricalEquality? declaration.type
+        return isEquality? declaration.type
     ) with
       | some x => return x
       | _ => throw $ .invalidParams s!"Goal is not equality: {goalString}"
@@ -799,7 +282,7 @@ def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
       let md ← goal.mvarId.getDecl
       let lctx := md.lctx |>.sanitizeNames.run' {options := (← getOptions)}
       Meta.withLCtx lctx md.localInstances do
-        return ((parseMorphism lhs).getD (Expression.DebugString "Fail"), (parseMorphism rhs).getD (Expression.DebugString "Fail"))
+        return ((language.parseExpression lhs).getD (Expression.DebugString "Fail"), (language.parseExpression rhs).getD (Expression.DebugString "Fail"))
 
     let leftComponents := Diagram.constructMorphismDiagram 1 diagLeft
     let rightComponents := Diagram.constructMorphismDiagram 1 diagRight
