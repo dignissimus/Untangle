@@ -11,7 +11,6 @@ end String
 
 def withIndent (indent : ℕ) (s : String) := s.splitOn "\n" |> List.map (" ".rep indent ++ .) |> List.intersperse "\n" |> String.join
 
--- TODO: Remove excessive whitespace
 def Conv (ts : List String) :=
   let commands := ts |> List.map (λ s ↦ s.splitOn "\n") |> List.join |> List.map ("\n" ++ " ".rep 2 ++ .) |> String.join;
   "conv => {" ++ commands ++ "\n}"
@@ -20,7 +19,6 @@ def Enter (n : ℕ) := s!"enter [{n}]"
 def Slice (l r : ℕ) := s!"slice {l} {r}"
 def trySimp := (. ++ "\ntry simp only [CategoryTheory.Category.assoc]")
 
--- TODO: Format args properly
 def trySimpWith (args : List String) := (. ++ s!"\ntry simp only [{ args }]")
 def Symm := ("← " ++ .)
 def Repeat := ("repeat " ++ .)

@@ -3,7 +3,7 @@ import Untangle.Data.Diagram
 import Untangle.Parsing.Auxiliary
 import Untangle.Tactic.Auxiliary
 
-open Lean Meta Server Expr
+open Lean Meta Server Expr Diagram
 
 namespace Monad
 
@@ -22,7 +22,6 @@ mutual
       | _ => fail
 
 
-  -- TODO: Major
   partial def parseFunctorComposition (e: Expr) : Option (Expression ExpressionType.Functor) := do
     match getAppFnArgs? e with
       | some (`CategoryTheory.Functor.comp, #[_, _, _, _, _, _, F, G]) => Expression.FunctorComposition (← parseFunctor F) (←parseFunctor G)
@@ -111,13 +110,13 @@ def isMonadEta? (expression : Expr) :=
     | some (`CategoryTheory.Monad.η, #[_, _, _]) => true
     | _ => false
 
--- TODO: These rules have simple graphical rules which tell us whether or not we can apply them
---  I shouldn't generate tactics that will fail in lean
+def monad_left_unit (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
+  do return do
+    if isMonadEta? first.expression && isMonadMu? second.expression then
+      return (← fail)
+    fail
 
--- TODO: Be precise and split this into left unit and right unit rewrites
-
--- TODO: I'll probably want to package these into functions and write a combinator
-def monad_unit (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
+def monad_right_unit (first : Diagram.DiagramComponent) (second : Diagram.DiagramComponent) : RequestM $ Option String :=
   do return do
     if isMonadEta? first.expression && isMonadMu? second.expression then
       return (← fail)
@@ -141,7 +140,8 @@ def naturality  (first : Diagram.DiagramComponent) (second : Diagram.DiagramComp
       fail
 
 def GraphicalTactic :=
-  monad_unit
+  monad_left_unit
+  or' monad_right_unit
   or' monad_assoc
   or' naturality
 
@@ -209,6 +209,59 @@ def generateTactic (goal : Widget.InteractiveGoal) (first : Diagram.DiagramCompo
     return .none
 
 
+-- Note be careful with the following cases
+--  μ : (F ⋙ G) ⟶ (F ⋙ G') where μ is not T.map μ'
+def expressionAsDiagramInput : Expression α →  List FunctorLike
+  | Expression.Object object => [FunctorLike.Object object]
+  | Expression.LiftObject functor object => expressionAsDiagramInput object ++ [FunctorLike.Functor (raw functor)]
+  | Expression.Functor functor _source _target => [FunctorLike.Functor functor]
+  | Expression.FunctorComposition left right => expressionAsDiagramInput left ++ expressionAsDiagramInput right
+  | e => panic! s!"As input: {e}"
+
+partial def morphismAsDiagramComponent (location : ℕ) : Expression ExpressionType.Morphism → Option DiagramComponent
+  -- TODO: Consider the following case: let f := T.map f'; f ≫ g'
+  | Expression.Morphism expr source target =>
+    do
+    let outputs := expressionAsDiagramInput target
+      return {
+      inputs := expressionAsDiagramInput source
+      transformation := {
+        label := TransformationLike.Morphism expr, -- TODO: Read from expr, take MetaM as parameter
+        left := 0,
+        right := source.countObjectLifts,
+        numberOfOutputs := outputs.length
+      }
+      location
+      outputs := outputs
+    }
+  -- TODO: Might require context? If μ : (T ⋙ T)
+  | Expression.LiftMap functor morphism => do (← morphismAsDiagramComponent location morphism).applyFunctor functor
+  | Expression.NaturalTransformationComponent transformation object source target =>
+    do
+      return {
+        inputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput source)
+        transformation := {
+          label := TransformationLike.NaturalTransformation (raw transformation) -- Read from expr
+          left := 1 + object.countObjectLifts
+          right := object.countObjectLifts + source.countFunctorApplications
+          numberOfOutputs := target.countFunctorApplications
+        }
+        location
+        outputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput target)
+      }
+
+  -- | Expression.MorphismComposition expr f g => return (← morphismAsDiagramComponent $ Expression.Morphism expr (← f.source) (← g.target))
+  | e => panic! s!"Unreachable: {e}"
+
+def constructMorphismDiagram (location : ℕ): Expression ExpressionType.Morphism → Option Diagram
+  | Expression.MorphismComposition  _ first second => do
+    let left ← constructMorphismDiagram location first
+    let last ← left.getLast?
+    let offset := last.location + 1
+    let right ← constructMorphismDiagram offset second
+    return left ++ right
+  | morphism => do [← morphismAsDiagramComponent location morphism]
+
 def monad : Diagram.GraphicalLanguage where
   parseExpression := parseMorphism
   generateTactic := generateTactic
@@ -217,5 +270,6 @@ def monad : Diagram.GraphicalLanguage where
       | some (`CategoryTheory.Functor.id, #[_, _]) => true
       | some (`CategoryTheory.CategoryStruct.id, #[_, _, _]) => true
       | _ => false
+  renderExpression := constructMorphismDiagram
 
 end Monad

@@ -15,17 +15,27 @@ inductive ExpressionType where
   | Category
   | Object
 
+/- TODO: Abstract this
+  * Make Expression a field of GraphicalLanguage
+  * Each GraphicalLaanguage defines its own internal representation of morphisms
+-/
 inductive Expression : ExpressionType → Type where
-  | Category (expression: Expr) : Expression Category
   | Object (expression: Expr) : Expression ExpressionType.Object
-  | Morphism (expression: Expr) (source: Expression ExpressionType.Object) (target: Expression ExpressionType.Object) : Expression ExpressionType.Morphism
-  | NaturalTransformation (expression: Expr) (source: Expression ExpressionType.Functor) (target: Expression ExpressionType.Functor) : Expression NaturalTransformation
-  | NaturalTransformationComponent (naturalTransformation : Expression ExpressionType.NaturalTransformation) (object : Expression ExpressionType.Object) (source : Expression ExpressionType.Functor) (target : Expression ExpressionType.Functor): Expression ExpressionType.Morphism
+  | ObjectProduct (left : Expression ExpressionType.Object) (right : Expression ExpressionType.Object): Expression ExpressionType.Object
   | Functor (expression: Expr) (source: Expression ExpressionType.Object) (target: Expression ExpressionType.Object) : Expression ExpressionType.Functor
   | FunctorComposition (left : Expression ExpressionType.Functor) (right : Expression ExpressionType.Functor) : Expression ExpressionType.Functor
-  | MorphismComposition (expression : Expr) (first: Expression ExpressionType.Morphism) (second: Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
   | LiftObject (functor : Expression ExpressionType.Functor) (object : Expression ExpressionType.Object) : Expression ExpressionType.Object
+
+  | LeftTensor : (e : Expr) → (M : Expression ExpressionType.Object) → (f : Expression ExpressionType.Morphism) → Expression ExpressionType.Morphism
+  | RightTensor : (e : Expr) → (N : Expression ExpressionType.Object) → (f : Expression ExpressionType.Morphism) → Expression ExpressionType.Morphism
+
+  | Morphism (expression: Expr) (source: Expression ExpressionType.Object) (target: Expression ExpressionType.Object) : Expression ExpressionType.Morphism
+  | MorphismComposition (expression : Expr) (first: Expression ExpressionType.Morphism) (second: Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
+  | MorphismProduct (expression : Expr) (left : Expression ExpressionType.Morphism) (right : Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
+  | NaturalTransformation (expression: Expr) (source: Expression ExpressionType.Functor) (target: Expression ExpressionType.Functor) : Expression NaturalTransformation
+  | NaturalTransformationComponent (naturalTransformation : Expression ExpressionType.NaturalTransformation) (object : Expression ExpressionType.Object) (source : Expression ExpressionType.Functor) (target : Expression ExpressionType.Functor): Expression ExpressionType.Morphism
   | LiftMap (functor : Expression ExpressionType.Functor) (arrow : Expression ExpressionType.Morphism) : Expression ExpressionType.Morphism
+
   | PlainExpression (expression : Expr) : Expression _
   | DebugExpression (expression : Expr) : Expression _
   | DebugString (s: String) : Expression _

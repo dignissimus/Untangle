@@ -49,6 +49,8 @@ structure DiagramComponent where
   functorApplications : ℕ := 0
 deriving Repr
 
+abbrev Diagram := List DiagramComponent
+
 structure GraphicalLanguage where
   parseExpression : Expr → Option (Expression ExpressionType.Morphism)
   generateTactic :
@@ -57,6 +59,7 @@ structure GraphicalLanguage where
     → (second : Diagram.DiagramComponent)
     → RequestM $ Option (List String)
   isIdentity : Expr → Bool
+  renderExpression : (location : ℕ) → Expression ExpressionType.Morphism → Option Diagram
 
 namespace FunctorLike
   def isIdentity : FunctorLike → Diagram.GraphicalLanguage →  Bool
@@ -82,10 +85,6 @@ namespace Transformation
   def outputEnd (α : Transformation) := α.left + α.numberOfOutputs - 1
   def outputs(α : Transformation) := range α.outputStart α.outputEnd
 end Transformation
-
-
-
-
 
 instance : ToString (DiagramComponent) := ToString.mk reprStr
 
@@ -147,65 +146,5 @@ def isNaturalTransformation : DiagramComponent → Bool
     | _ => False
 
 end DiagramComponent
-
-abbrev Diagram := List DiagramComponent
-
--- Note be careful with the following cases
---  μ : (F ⋙ G) ⟶ (F ⋙ G') where μ is not T.map μ'
-def expressionAsDiagramInput : Expression α →  List FunctorLike
-  | Expression.Object object => [FunctorLike.Object object]
-  | Expression.LiftObject functor object => expressionAsDiagramInput object ++ [FunctorLike.Functor (raw functor)]
-  | Expression.Functor functor _source _target => [FunctorLike.Functor functor]
-  | Expression.FunctorComposition left right => expressionAsDiagramInput left ++ expressionAsDiagramInput right
-  | e => panic! s!"As input: {e}"
-
-partial def morphismAsDiagramComponent (location : ℕ) : Expression ExpressionType.Morphism → Option DiagramComponent
-  -- I make the assumption that morphisms map from the source category
-  -- But this only holds when the expression is normalised
-  -- i.e. let f := T.map f'; f ≫ g'
-  -- TODO
-  | Expression.Morphism expr source target =>
-    do
-    let outputs := expressionAsDiagramInput target
-      return {
-      inputs := expressionAsDiagramInput source
-      transformation := {
-        label := TransformationLike.Morphism expr, -- TODO: Read from expr, take MetaM as parameter
-        left := 0,
-        right := source.countObjectLifts,
-        numberOfOutputs := outputs.length
-      }
-      location
-      outputs := outputs
-    }
-  -- TODO: Below case
-  | Expression.LiftMap functor morphism => do (← morphismAsDiagramComponent location morphism).applyFunctor functor
-  -- TODO: Below case
-  -- Might require context? If μ : (T ⋙ T)
-  | Expression.NaturalTransformationComponent transformation object source target =>
-    do
-      return {
-        inputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput source)
-        transformation := {
-          label := TransformationLike.NaturalTransformation (raw transformation) -- Read from expr
-          left := 1 + object.countObjectLifts
-          right := object.countObjectLifts + source.countFunctorApplications
-          numberOfOutputs := target.countFunctorApplications
-        }
-        location
-        outputs := (← expressionAsDiagramInput object) ++ (← expressionAsDiagramInput target)
-      }
-  -- TODO: Maybe normalise so this doesn't occur. i.e repeat rw [Functor.comp_assoc]
-  -- | Expression.MorphismComposition expr f g => return (← morphismAsDiagramComponent $ Expression.Morphism expr (← f.source) (← g.target))
-  | e => panic! s!"Unreachable: {e}"
-
-def constructMorphismDiagram (location : ℕ): Expression ExpressionType.Morphism → Option Diagram
-  | Expression.MorphismComposition  _ first second => do
-    let left ← constructMorphismDiagram location first
-    let last ← left.getLast?
-    let offset := last.location + 1
-    let right ← constructMorphismDiagram offset second
-    return left ++ right
-  | morphism => do [← morphismAsDiagramComponent location morphism]
 
 end Diagram

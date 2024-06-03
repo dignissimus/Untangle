@@ -13,6 +13,7 @@ import Untangle.Parsing.Auxiliary
 import Untangle.Data.Expression
 import Untangle.Data.Diagram
 import Untangle.Structure.Monad
+import Untangle.Structure.HopfAlgebra
 import Untangle.Tactic.Auxiliary
 
 open Lean Meta Server Expr
@@ -44,11 +45,8 @@ def transformationLabel (f : Expr → MetaM γ) [ToString γ] (transformation : 
 def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
 
 
-
-def language := Monad.monad
-
 open scoped Jsx in
-def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) : IO Html := do
+def drawDiagram (language : Diagram.GraphicalLanguage) (side: Side) (components : Diagram.Diagram) (goal : Widget.InteractiveGoal) : IO Html := do
     let mut diagramString := ""
     let mut counter := 0
     let firstComponent := List.head components (sorry)
@@ -69,7 +67,6 @@ def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.Inter
       let identifier := s!"X{counter}"
       counter := counter + 1
       diagramString := diagramString ++ s!"FunctorLike {identifier}\n"
-      -- embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr input)
       embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr side input)
 
       if let some previousIdentifier := previous then
@@ -81,6 +78,8 @@ def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.Inter
 
     let mut row := 0
     for component in components do
+      if component.transformation.isIdentity language then
+        continue
       previous := none
       previousIdentifiers := currentIdentifiers
       currentIdentifiers := []
@@ -90,7 +89,6 @@ def drawDiagram (side: Side) (components : Diagram.Diagram) (goal : Widget.Inter
         counter := counter + 1
         currentIdentifiers := currentIdentifiers.append [identifier]
         diagramString := diagramString ++ s!"FunctorLike {identifier}\n"
-        -- embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr output)
         embeds := embeds.push (identifier, read $ diagramLabel Lean.Meta.ppExpr side output)
         if let some previousIdentifier := previous then
           diagramString := diagramString ++ s!"Apply({previousIdentifier}, {identifier})\n"
@@ -160,8 +158,6 @@ structure ClickEvent where
   deriving RpcEncodable
 
 
-
-
 structure EditDocument where
   edit : Lsp.TextDocumentEdit
   nextLocation : Lsp.Range
@@ -177,7 +173,7 @@ def lines (s : String) := s.splitOn "\n"
 end String
 
 
-def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument) :=
+def clickRpc (language : Diagram.GraphicalLanguage) (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument) :=
   RequestM.asTask do
     let (lhs, rhs) := ← match (← do
           event.goal.ctx.val.runMetaM {} do
@@ -200,7 +196,7 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
       | .Left => diagramL
       | .Right => diagramR
 
-    let components := Diagram.constructMorphismDiagram 1 diagram |> Option.getD $ []
+    let components := (language.renderExpression 1 diagram).getD []
 
     let (firstPair, secondPair) :=
       if event.first.1 < event.second.1
@@ -220,7 +216,6 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
     let lineStart := Lean.findLineStart fm.source spos
     let (indent, isStart) := Lean.findIndentAndIsStart fm.source spos
 
-    -- TODO: I don't want to panic if we can't apply a tactic
     let tacticString' ← language.generateTactic event.goal first second
     if let .none := tacticString' then return fail
     let tacticString := tacticString'.get!
@@ -229,7 +224,6 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
     let offset := if isStart then 0 else 1
     let side := event.side
 
-    -- TODO: second.location = first.location + 1
     let location := first.location
     let command := buildTactic tacticString side location indent
     let position' := ⟨event.position.line + offset, 0⟩
@@ -253,18 +247,19 @@ def clickRpc (event : ClickEvent) : RequestM (RequestTask $ Option EditDocument)
 
 open Server RequestM in
 @[server_rpc_method]
-def handleClick (params : ClickEvent) : RequestM (RequestTask $ Option EditDocument) := clickRpc params
+def handleClickHopf (params : ClickEvent) : RequestM (RequestTask $ Option EditDocument) := clickRpc hopf params
+
+open Server RequestM in
+@[server_rpc_method]
+def handleClickMonad (params : ClickEvent) : RequestM (RequestTask $ Option EditDocument) := clickRpc Monad.monad params
 
 
 @[widget_module]
 def UntangleWidget : Component UntangleState where
   javascript := include_str "scripts" / "untangle.js"
 
--- Probably shouldn't throw
 open scoped Jsx in
-@[server_rpc_method]
-def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
-  RequestM.asTask do
+def handleRequest (language : Diagram.GraphicalLanguage) (props : PanelWidgetProps) := RequestM.asTask do
     if let none := props.goals[0]? then
       return <p>No more goals</p>
     let some goal := props.goals[0]? | throw $ .invalidParams "Could not find a goal"
@@ -284,8 +279,8 @@ def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
       Meta.withLCtx lctx md.localInstances do
         return ((language.parseExpression lhs).getD (Expression.DebugString "Fail"), (language.parseExpression rhs).getD (Expression.DebugString "Fail"))
 
-    let leftComponents := Diagram.constructMorphismDiagram 1 diagLeft
-    let rightComponents := Diagram.constructMorphismDiagram 1 diagRight
+    let leftComponents := language.renderExpression 1 diagLeft
+    let rightComponents := language.renderExpression 1 diagRight
 
     let componentsL := Option.getD leftComponents []
     let componentsR := Option.getD rightComponents []
@@ -294,14 +289,27 @@ def Untangle.rpc (props : PanelWidgetProps) : RequestM (RequestTask Html) :=
     return <details «open»={true}>
         <summary className="mv2 pointer">Untangle</summary>
         <div className="ml1">
-          {joinDivHorizontal [← drawDiagram Side.Left componentsL goal, ← drawDiagram Side.Right componentsR goal]}
+          {joinDivHorizontal [← drawDiagram language Side.Left componentsL goal, ← drawDiagram language Side.Right componentsR goal]}
           </div>
         <textarea id="serialised-goal" style={hidden}></textarea>
         <UntangleWidget goal={goal} pair={⟨1, 2⟩} position={props.pos}></UntangleWidget>
       </details>
 
+@[server_rpc_method]
+def UntangleMonad.rpc := handleRequest Monad.monad
+
+@[server_rpc_method]
+def UntangleHopf.rpc := handleRequest hopf
+
 namespace Untangle
 
 @[widget_module]
-def Untangle : Component PanelWidgetProps :=
-  mk_rpc_widget% Untangle.rpc
+def UntangleMonad : Component PanelWidgetProps := mk_rpc_widget% UntangleMonad.rpc
+
+
+@[widget_module]
+abbrev Untangle := UntangleMonad
+
+
+@[widget_module]
+def UntangleHopf : Component PanelWidgetProps := mk_rpc_widget% UntangleHopf.rpc
