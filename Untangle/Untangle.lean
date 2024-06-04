@@ -39,8 +39,11 @@ def diagramLabel (f : Expr → MetaM γ) [ToString γ] (side : Side) : Diagram.F
   | Diagram.FunctorLike.Object object => return <p></p> -- <p side={toString side}>{(← f object) |> toString |> .text}</p>
 
 open scoped Jsx in
-def transformationLabel (f : Expr → MetaM γ) [ToString γ] (transformation : Diagram.Transformation) (side : Side) (row : ℕ) (column : ℕ) : MetaM Html :=
-    return <p><b><a style={textStyle} side={toString side} row={row} column={column} href="#">{(← f transformation.label.expression) |>  toString |> .text}</a></b></p>
+def transformationLabel (language : Diagram.GraphicalLanguage) (f : Expr → MetaM γ) [ToString γ] (transformation : Diagram.Transformation) (side : Side) (row : ℕ) (column : ℕ) : MetaM Html :=
+    if transformation.isBraid language then
+      return <p></p>
+    else
+      return <p><b><a style={textStyle} side={toString side} row={row} column={column} href="#">{(← f transformation.label.expression) |>  toString |> .text}</a></b></p>
 
 def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
 
@@ -110,9 +113,12 @@ def drawDiagram (language : Diagram.GraphicalLanguage) (side: Side) (components 
       let alpha := s!"X{counter}"
       counter := counter + 1
 
-      embeds := embeds.push (alpha, read $ transformationLabel Lean.Meta.ppExpr component.transformation side row 0)
+      embeds := embeds.push (alpha, read $ transformationLabel language Lean.Meta.ppExpr component.transformation side row 0)
       row := row + 1
       diagramString := diagramString ++ s!"NaturalTransformationLike {alpha}\n"
+
+      if component.transformation.isBraid language then
+        diagramString := diagramString ++ s!"Braid({alpha})\n"
       if component.transformation.isIdentity language then
         for (F, G) in List.zip previousIdentifiers currentIdentifiers do
           diagramString := diagramString ++ s!"WouldTransform({F}, {alpha})\n"

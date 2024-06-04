@@ -59,6 +59,7 @@ structure GraphicalLanguage where
     → (second : Diagram.DiagramComponent)
     → RequestM $ Option (List String)
   isIdentity : Expr → Bool
+  isBraid : Expr → Bool := Function.const Expr false
   renderExpression : (location : ℕ) → Expression ExpressionType.Morphism → Option Diagram
 
 namespace FunctorLike
@@ -73,12 +74,14 @@ namespace TransformationLike
     | Morphism expression => expression
 
 def isIdentity (α : TransformationLike)  (language : Diagram.GraphicalLanguage): Bool := language.isIdentity α.expression
+def isBraid (α : TransformationLike)  (language : Diagram.GraphicalLanguage): Bool := language.isBraid α.expression
 end TransformationLike
 
 namespace Transformation
   def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
   def inputs (α : Transformation) := range α.left α.right
   def isIdentity (α : Transformation) := α.label.isIdentity
+  def isBraid (α : Transformation) := α.label.isBraid
 
   def numberOfInputs (α : Transformation) := α.right - α.left + 1
   def outputStart (α : Transformation) := α.left

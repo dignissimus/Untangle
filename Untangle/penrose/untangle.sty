@@ -25,6 +25,12 @@ forall NaturalTransformationLike f {
     }
 }
 
+
+forall NaturalTransformationLike f
+where Braid(f) {
+  f.circle.r = 0
+}
+
 forall FunctorLike F; FunctorLike G
 where Apply(F, G) {
   G.center = (F.center[0] + 100, F.center[1])

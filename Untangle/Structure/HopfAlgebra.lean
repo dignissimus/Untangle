@@ -174,4 +174,8 @@ def hopf : Diagram.GraphicalLanguage where
       | .some (`LinearMap.id, #[_, _, _, _, _]) => true
       | .some (``TensorProduct.assoc, #[R, _, M, N, P, _, _, _, _, _, _]) => true
       | _ => false
+  isBraid (e : Expr) : Bool :=
+    match getAppFnArgs? e with
+      | .some (`TensorProduct.comm, #[_, _, M, N, _, _, _, _]) => true
+      | _ => false
   renderExpression := renderExpression
