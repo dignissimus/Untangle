@@ -271,5 +271,6 @@ def monad : Diagram.GraphicalLanguage where
       | some (`CategoryTheory.CategoryStruct.id, #[_, _, _]) => true
       | _ => false
   renderExpression := constructMorphismDiagram
+  name := "Monad"
 
 end Monad

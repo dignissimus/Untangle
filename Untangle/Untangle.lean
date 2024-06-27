@@ -43,7 +43,7 @@ def transformationLabel (language : Diagram.GraphicalLanguage) (f : Expr → Met
     if transformation.isBraid language then
       return <p></p>
     else
-      return <p><b><a style={textStyle} side={toString side} row={row} column={column} href="#">{(← f transformation.label.expression) |>  toString |> .text}</a></b></p>
+      return <p><b><a style={textStyle} side={toString side} row={row} column={column} href="#" language={language.name} >{(← f transformation.label.expression) |>  toString |> .text}</a></b></p>
 
 def range (left : Nat) (right : Nat) :=  List.map Prod.fst ∘ List.enumFrom left $ List.range (right - left + 1)
 
@@ -162,7 +162,6 @@ structure ClickEvent where
   goal : Widget.InteractiveGoal
   side : Side
   deriving RpcEncodable
-
 
 structure EditDocument where
   edit : Lsp.TextDocumentEdit

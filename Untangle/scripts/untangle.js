@@ -24,10 +24,12 @@ let i = 0;
 let currentEventListener;
 let lastTarget;
 let side;
+let language;
 
 function fn(params) {
     const rs = React.useContext(RpcContext)
     const ec = React.useContext(EditorContext);
+    language = params.languageName;
     if (currentEventListener) {
         window.document.removeEventListener("click", currentEventListener);
     };
@@ -46,7 +48,7 @@ function fn(params) {
             return;
         }
 
-        rs.call("handleClick", {
+        rs.call("handleClick" + event.target.getAttribute("language"), {
             first: lastTarget,
             second: currentTarget,
             position: params.position,

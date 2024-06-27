@@ -61,6 +61,7 @@ structure GraphicalLanguage where
   isIdentity : Expr → Bool
   isBraid : Expr → Bool := Function.const Expr false
   renderExpression : (location : ℕ) → Expression ExpressionType.Morphism → Option Diagram
+  name : String
 
 namespace FunctorLike
   def isIdentity : FunctorLike → Diagram.GraphicalLanguage →  Bool

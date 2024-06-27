@@ -8,6 +8,8 @@ import Mathlib.Algebra.Algebra.Basic
 import Mathlib.RingTheory.Bialgebra
 import Mathlib.RingTheory.HopfAlgebra
 
+import Mathlib.Algebra.Module.Equiv
+
 open Lean Diagram
 
 namespace Expression
@@ -94,6 +96,16 @@ def renderInputs : Expression ExpressionType.Morphism → List FunctorLike
   | Expression.RightTensor _ N f => renderInputs f ++ renderInput N
   | _ => unreachable!
 
+def leftSkip : Expression ExpressionType.Morphism → ℕ
+  | Expression.LeftTensor _ M f  => (renderInput M).length + leftSkip f
+  | Expression.RightTensor _ _ f => leftSkip f
+  | _ => 0
+
+def rightSkip : Expression ExpressionType.Morphism → ℕ
+  | Expression.LeftTensor _ _ f => leftSkip f
+  | Expression.RightTensor _ M f  => (renderInput M).length + leftSkip f
+  | _ => 0
+
 def renderOutputs : Expression ExpressionType.Morphism → List FunctorLike
   | Expression.Morphism _ _ target => renderInput target
   | Expression.LeftTensor _ M f  => renderInput M ++ renderOutputs f
@@ -104,6 +116,7 @@ def countObjects : Expression ExpressionType.Object → ℕ
   | Expression.Object _ => 1
   | Expression.ObjectProduct left right => countObjects left + countObjects right
   | _ => unreachable!
+
 
 partial def constructDiagramComponent (location : ℕ) : Expression ExpressionType.Morphism → List DiagramComponent
   | Expression.Morphism expr source target => do
@@ -133,9 +146,9 @@ partial def constructDiagramComponent (location : ℕ) : Expression ExpressionTy
       outputs := outputs
       transformation := {
         label := TransformationLike.Morphism f'._expr
-        left := (renderInput M).length
-        right := inputs.length - 1
-        numberOfOutputs := outputs.length - (renderInput M).length
+        left := (renderInput M).length + leftSkip f'
+        right := inputs.length - rightSkip f' - 1
+        numberOfOutputs := outputs.length - (renderInput M).length - leftSkip f' - rightSkip f'
       }
       location
     }
@@ -148,9 +161,9 @@ partial def constructDiagramComponent (location : ℕ) : Expression ExpressionTy
       outputs := outputs
       transformation := {
         label := TransformationLike.Morphism f'._expr
-        left := 0
-        right := (renderInputs f').length - 1
-        numberOfOutputs := outputs.length - (renderInput N).length
+        left := leftSkip f'
+        right := (renderInputs f').length - rightSkip f' - 1
+        numberOfOutputs := outputs.length - (renderInput N).length - leftSkip f' - rightSkip f'
       }
       location
     }
@@ -179,3 +192,56 @@ def hopf : Diagram.GraphicalLanguage where
       | .some (`TensorProduct.comm, #[_, _, M, N, _, _, _, _]) => true
       | _ => false
   renderExpression := renderExpression
+  name := "Hopf"
+
+-- Lemmas
+open TensorProduct HopfAlgebra Bialgebra Coalgebra LinearMap
+lemma assoc_inj
+[CommSemiring R]
+[AddCommMonoid A]
+[AddCommMonoid B]
+[AddCommMonoid C]
+[AddCommMonoid D]
+[AddCommMonoid E]
+[AddCommMonoid F]
+[AddCommMonoid G]
+[Module R A]
+[Module R B]
+[Module R C]
+[Module R D]
+[Module R E]
+[Module R F]
+[Module R G]
+{f : A →ₗ[R] B}
+{i : A →ₗ[R] B}
+{g : C →ₗ[R] D}
+{j : C →ₗ[R] D}
+{h : E →ₗ[R] F}
+{k : E →ₗ[R] F}
+: map (map f g) h = map (map i j) k → map f (map g h) = map i (map j k) := by
+  intro hyp
+  ext x y z
+  simp
+  have hyp' := (TensorProduct.map_tmul (map f g) h (x ⊗ₜ[R] y) z).symm
+  rw [TensorProduct.map_tmul f g x y] at hyp'
+  rw [hyp] at hyp'
+  rw [TensorProduct.map_tmul (map i j) k (x ⊗ₜ[R] y) z] at hyp'
+  rw [TensorProduct.map_tmul i j x y] at hyp'
+  repeat rw [← TensorProduct.assoc_tmul]
+  rw [hyp']
+
+lemma mul'_comp_comul [CommSemiring R] [Semiring A] [Bialgebra R A] : LinearMap.mul' R _ ∘ₗ  TensorProduct.map comul comul = comul ∘ₗ LinearMap.mul' R A := by
+  ext
+  simp
+
+lemma mul'_comp_counit [CommSemiring R] [Semiring A] [B : Bialgebra R A] : LinearMap.mul' R _ ∘ₗ  TensorProduct.map B.counit B.counit = B.counit ∘ₗ LinearMap.mul' R _:= by
+  ext
+  simp
+
+lemma comul_comp_mul' [CommSemiring R] [Semiring A] [B : Bialgebra R A] : B.comul ∘ₗ LinearMap.mul' R A = LinearMap.mul' R _ ∘ₗ TensorProduct.map comul comul := by
+  ext
+  simp
+
+-- TODO: Use the mathlib rTensor_comp_lTensor instead of this one
+theorem rTensor_comp_lTensor' [CommSemiring R] [CommSemiring A] [H : HopfAlgebra R A] : map H.comul H.comul = (H.comul.rTensor (A ⊗[R] A)).comp (H.comul.lTensor A) := by
+  simp only [rTensor_comp_lTensor]
